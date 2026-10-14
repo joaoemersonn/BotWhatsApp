@@ -15,6 +15,7 @@ import { WASocket } from '../handlers/types.js';
 
 let currentSocket: WASocket | null = null;
 let isReconnecting = false;
+let isConnected = false;
 
 /**
  * Inicia ou reconecta o socket do WhatsApp via Baileys
@@ -79,6 +80,7 @@ export async function connectToWhatsApp(): Promise<WASocket> {
     }
 
     if (connection === 'close') {
+      isConnected = false;
       const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
 
@@ -105,6 +107,7 @@ export async function connectToWhatsApp(): Promise<WASocket> {
         );
       }
     } else if (connection === 'open') {
+      isConnected = true;
       isReconnecting = false;
       const userJid = sock.user?.id || 'Desconhecido';
       const userName = sock.user?.name || config.botName;
@@ -127,10 +130,76 @@ export async function connectToWhatsApp(): Promise<WASocket> {
 }
 
 /**
+ * Retorna se o WhatsApp está atualmente conectado e pronto para enviar mensagens
+ */
+export function isWhatsAppReady(): boolean {
+  return isConnected && currentSocket !== null;
+}
+
+/**
  * Retorna a instância atual ativa do socket
  */
 export function getSocket(): WASocket | null {
   return currentSocket;
+}
+
+/**
+ * Resolve o identificador (JID) canônico para envio de mensagens.
+ * Trata grupos, números com/sem DDI, e valida existência no WhatsApp.
+ */
+export async function resolveJid(target: string): Promise<string> {
+  const sock = currentSocket;
+  if (!sock) {
+    throw new Error('Socket do WhatsApp não inicializado');
+  }
+
+  const trimmed = target.trim();
+
+  // Se já for JID de grupo (@g.us) ou usuário direto (@s.whatsapp.net)
+  if (trimmed.endsWith('@g.us') || trimmed.endsWith('@s.whatsapp.net')) {
+    return trimmed;
+  }
+
+  // Remove caracteres não numéricos
+  const cleanNumber = trimmed.replace(/\D/g, '');
+  if (!cleanNumber || cleanNumber.length < 8) {
+    throw new Error(`Número de telefone inválido: "${target}"`);
+  }
+
+  try {
+    // Consulta o WhatsApp para descobrir o JID oficial registrado
+    const results = await sock.onWhatsApp(cleanNumber);
+    const match = results?.find((r) => r.exists);
+    if (match && match.jid) {
+      return match.jid;
+    }
+  } catch (err) {
+    logger.warn({ err, cleanNumber }, 'Aviso: Falha ao consultar onWhatsApp, usando formato padrão');
+  }
+
+  // Formato fallback padrão
+  return `${cleanNumber}@s.whatsapp.net`;
+}
+
+/**
+ * Envia ativamente uma mensagem de texto para um chat específico (número ou grupo)
+ */
+export async function sendTextMessage(to: string, message: string) {
+  if (!isWhatsAppReady() || !currentSocket) {
+    throw new Error('WhatsApp não está conectado no momento. Aguarde a sincronização.');
+  }
+
+  const jid = await resolveJid(to);
+
+  logger.info({ jid, length: message.length }, 'Enviando mensagem ativa via API');
+  const response = await currentSocket.sendMessage(jid, { text: message });
+
+  return {
+    success: true,
+    messageId: response?.key?.id,
+    to: jid,
+    timestamp: response?.messageTimestamp,
+  };
 }
 
 /**
@@ -145,6 +214,7 @@ export async function closeWhatsAppConnection(): Promise<void> {
       logger.error({ err }, 'Erro ao fechar socket');
     } finally {
       currentSocket = null;
+      isConnected = false;
     }
   }
 }

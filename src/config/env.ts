@@ -13,6 +13,8 @@ export interface BotConfig {
   autoReadMessages: boolean;
   ignoreGroups: boolean;
   pairingNumber?: string;
+  apiPort: number;
+  apiKey?: string;
 }
 
 export const config: BotConfig = {
@@ -24,4 +26,6 @@ export const config: BotConfig = {
   autoReadMessages: process.env.AUTO_READ_MESSAGES === 'true',
   ignoreGroups: process.env.IGNORE_GROUPS === 'true',
   pairingNumber: process.env.PAIRING_NUMBER?.trim() || undefined,
+  apiPort: Number(process.env.PORT || process.env.API_PORT || 3000),
+  apiKey: process.env.API_KEY?.trim() || undefined,
 };

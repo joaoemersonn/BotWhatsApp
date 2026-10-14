@@ -1,6 +1,7 @@
 import { config } from './config/env.js';
 import { logger } from './utils/logger.js';
 import { connectToWhatsApp, closeWhatsAppConnection } from './connection/whatsapp.js';
+import { startApiServer, stopApiServer } from './api/server.js';
 
 async function bootstrap() {
   logger.info(
@@ -9,11 +10,16 @@ async function bootstrap() {
       env: config.nodeEnv,
       prefix: config.botPrefix,
       authDir: config.authDir,
+      apiPort: config.apiPort,
     },
     'Iniciando aplicação WhatsApp Bot...'
   );
 
   try {
+    // Inicializa o servidor HTTP da API (permite disparos ativos e healthcheck)
+    await startApiServer();
+
+    // Inicializa a conexão com o WhatsApp via Baileys
     await connectToWhatsApp();
   } catch (error) {
     logger.fatal({ error }, 'Falha crítica ao iniciar o bot');
@@ -29,6 +35,7 @@ async function handleShutdown(signal: string) {
 
   logger.info({ signal }, 'Sinal de encerramento recebido. Desligando bot com segurança...');
   try {
+    await stopApiServer();
     await closeWhatsAppConnection();
     logger.info('Desligamento concluído com sucesso.');
     process.exit(0);

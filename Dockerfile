@@ -43,5 +43,8 @@ USER node
 # Volume montável para credenciais do WhatsApp
 VOLUME ["/app/auth_info_baileys"]
 
+# Expõe a porta da API HTTP
+EXPOSE 3000
+
 # Inicia o bot
 CMD ["node", "dist/index.js"]

@@ -8,6 +8,9 @@ services:
     # Carrega variáveis de ambiente a partir do arquivo .env
     env_file:
       - .env
+    # Expõe a porta da API HTTP para envio ativo de mensagens e relatórios
+    ports:
+      - "${PORT:-3000}:3000"
     # Mapeia o diretório de credenciais para que a sessão não seja perdida ao reiniciar o container
     volumes:
       - ./auth_info_baileys:/app/auth_info_baileys
