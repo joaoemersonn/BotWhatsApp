@@ -1,0 +1,27 @@
+# Dependências
+node_modules/
+
+# Build
+dist/
+
+# Credenciais e Sessão do WhatsApp (NUNCA COMMITE ISTO!)
+auth_info_baileys/
+*.session
+
+# Variáveis de Ambiente locais
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Sistema Operacional
+.DS_Store
+Thumbs.db
+
+# Cache npm temporário
+.npm-cache/
