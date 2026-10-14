@@ -4,6 +4,7 @@ import makeWASocket, {
   fetchLatestBaileysVersion,
   Browsers,
   ConnectionState,
+  AnyMessageContent,
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import qrcode from 'qrcode-terminal';
@@ -16,6 +17,15 @@ import { WASocket } from '../handlers/types.js';
 let currentSocket: WASocket | null = null;
 let isReconnecting = false;
 let isConnected = false;
+
+export interface SendMediaOptions {
+  to: string;
+  mediaUrl?: string;
+  mediaBase64?: string;
+  mimetype?: string;
+  fileName?: string;
+  caption?: string;
+}
 
 /**
  * Inicia ou reconecta o socket do WhatsApp via Baileys
@@ -145,7 +155,7 @@ export function getSocket(): WASocket | null {
 
 /**
  * Resolve o identificador (JID) canônico para envio de mensagens.
- * Trata grupos, números com/sem DDI, e valida existência no WhatsApp.
+ * Trata grupos (@g.us), números internacionais e números brasileiros com/sem nono dígito.
  */
 export async function resolveJid(target: string): Promise<string> {
   const sock = currentSocket;
@@ -191,7 +201,7 @@ export async function sendTextMessage(to: string, message: string) {
 
   const jid = await resolveJid(to);
 
-  logger.info({ jid, length: message.length }, 'Enviando mensagem ativa via API');
+  logger.info({ jid, length: message.length }, 'Enviando mensagem de texto ativa via API');
   const response = await currentSocket.sendMessage(jid, { text: message });
 
   return {
@@ -199,6 +209,141 @@ export async function sendTextMessage(to: string, message: string) {
     messageId: response?.key?.id,
     to: jid,
     timestamp: response?.messageTimestamp,
+  };
+}
+
+/**
+ * Envia arquivo de mídia ou documento (PDF, Imagem, Planilha de relatório)
+ */
+export async function sendMediaMessage(options: SendMediaOptions) {
+  if (!isWhatsAppReady() || !currentSocket) {
+    throw new Error('WhatsApp não está conectado no momento. Aguarde a sincronização.');
+  }
+
+  const jid = await resolveJid(options.to);
+  const mimetype = options.mimetype || 'application/octet-stream';
+
+  let mediaBufferOrUrl: { url: string } | Buffer;
+  if (options.mediaUrl) {
+    mediaBufferOrUrl = { url: options.mediaUrl };
+  } else if (options.mediaBase64) {
+    // Remove cabeçalhos data URL se existirem (ex: "data:image/png;base64,...")
+    const cleanBase64 = options.mediaBase64.replace(/^data:.*?;base64,/, '');
+    mediaBufferOrUrl = Buffer.from(cleanBase64, 'base64');
+  } else {
+    throw new Error('É obrigatório informar "mediaUrl" ou "mediaBase64".');
+  }
+
+  let messagePayload: AnyMessageContent;
+
+  if (mimetype.startsWith('image/')) {
+    messagePayload = {
+      image: mediaBufferOrUrl,
+      caption: options.caption,
+    };
+  } else if (mimetype.startsWith('video/')) {
+    messagePayload = {
+      video: mediaBufferOrUrl,
+      caption: options.caption,
+    };
+  } else if (mimetype.startsWith('audio/')) {
+    messagePayload = {
+      audio: mediaBufferOrUrl,
+      mimetype,
+    };
+  } else {
+    // Qualquer documento (PDF, Excel, CSV, etc.)
+    messagePayload = {
+      document: mediaBufferOrUrl,
+      mimetype,
+      fileName: options.fileName || 'relatorio.pdf',
+      caption: options.caption,
+    };
+  }
+
+  logger.info({ jid, mimetype, fileName: options.fileName }, 'Enviando mídia ativa via API');
+  const response = await currentSocket.sendMessage(jid, messagePayload);
+
+  return {
+    success: true,
+    messageId: response?.key?.id,
+    to: jid,
+    fileName: options.fileName,
+    timestamp: response?.messageTimestamp,
+  };
+}
+
+/**
+ * Lista todos os grupos dos quais o bot participa
+ */
+export async function getAllGroups() {
+  if (!isWhatsAppReady() || !currentSocket) {
+    throw new Error('WhatsApp não está conectado no momento. Aguarde a sincronização.');
+  }
+
+  logger.info('Consultando grupos participantes no WhatsApp...');
+  const groupsMap = await currentSocket.groupFetchAllParticipating();
+
+  return Object.values(groupsMap).map((g) => ({
+    id: g.id,
+    subject: g.subject,
+    owner: g.owner || g.subjectOwner || null,
+    creation: g.creation ? new Date(g.creation * 1000).toISOString() : null,
+    description: g.desc?.toString() || '',
+    participantsCount: g.participants?.length || 0,
+    announceOnly: g.announce || false,
+    restrictSettings: g.restrict || false,
+  }));
+}
+
+/**
+ * Obtém detalhes completos de um grupo específico, incluindo participantes
+ */
+export async function getGroupMetadata(groupId: string) {
+  if (!isWhatsAppReady() || !currentSocket) {
+    throw new Error('WhatsApp não está conectado no momento. Aguarde a sincronização.');
+  }
+
+  const jid = groupId.includes('@g.us') ? groupId.trim() : `${groupId.trim()}@g.us`;
+  const metadata = await currentSocket.groupMetadata(jid);
+
+  return {
+    id: metadata.id,
+    subject: metadata.subject,
+    owner: metadata.owner || metadata.subjectOwner || null,
+    creation: metadata.creation ? new Date(metadata.creation * 1000).toISOString() : null,
+    description: metadata.desc?.toString() || '',
+    participantsCount: metadata.participants?.length || 0,
+    announceOnly: metadata.announce || false,
+    restrictSettings: metadata.restrict || false,
+    participants: metadata.participants.map((p) => ({
+      id: p.id,
+      admin: p.admin || null,
+    })),
+  };
+}
+
+/**
+ * Verifica se um número de telefone está cadastrado no WhatsApp e retorna seu JID canônico
+ */
+export async function checkNumberStatus(phoneNumber: string) {
+  if (!isWhatsAppReady() || !currentSocket) {
+    throw new Error('WhatsApp não está conectado no momento. Aguarde a sincronização.');
+  }
+
+  const cleanNumber = phoneNumber.replace(/\D/g, '');
+  if (!cleanNumber || cleanNumber.length < 8) {
+    throw new Error(`Número inválido: "${phoneNumber}"`);
+  }
+
+  const results = await currentSocket.onWhatsApp(cleanNumber);
+  const match = results?.find((r) => r.exists);
+
+  return {
+    phone: phoneNumber,
+    cleanNumber,
+    exists: Boolean(match?.exists),
+    jid: match?.jid || null,
   };
 }
 
