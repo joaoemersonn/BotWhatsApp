@@ -14,6 +14,9 @@ import { apiKeyAuth } from './auth.js';
 
 export const apiRouter = Router();
 
+// Aplica autenticação por API_KEY em 100% das rotas da API
+apiRouter.use(apiKeyAuth);
+
 const startTime = Date.now();
 
 /**

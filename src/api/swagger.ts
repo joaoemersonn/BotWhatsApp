@@ -117,7 +117,6 @@ Se configurada a variável \`API_KEY\` no \`.env\`, passe o token através do he
       get: {
         summary: 'Verificar status do bot e conexão do WhatsApp',
         tags: ['Status & Saúde'],
-        security: [],
         responses: {
           '200': {
             description: 'Bot online e conectado ao WhatsApp',

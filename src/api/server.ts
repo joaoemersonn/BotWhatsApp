@@ -5,6 +5,7 @@ import { config } from '../config/env.js';
 import { logger } from '../utils/logger.js';
 import { apiRouter } from './routes.js';
 import { swaggerRouter, swaggerSpec } from './swagger.js';
+import { apiKeyAuth } from './auth.js';
 
 let httpServer: Server | null = null;
 
@@ -16,24 +17,24 @@ export function createExpressApp() {
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-  // Documentação interativa Swagger UI
-  app.use(['/docs', '/api-docs'], swaggerRouter);
-  app.get(['/docs.json', '/api-docs.json'], (_req: Request, res: Response) => {
-    res.json(swaggerSpec);
-  });
-
-  // Rotas da API
-  app.use('/api', apiRouter);
-
-  // Redireciona a raiz para a documentação interativa
-  app.get('/', (_req: Request, res: Response) => {
+  // Redireciona a raiz para a documentação interativa (com autenticação)
+  app.get('/', apiKeyAuth, (_req: Request, res: Response) => {
     res.redirect('/docs');
   });
 
-  // Rota raiz de healthcheck direto
-  app.get('/health', (_req: Request, res: Response) => {
+  // Rota raiz de healthcheck (com autenticação)
+  app.get('/health', apiKeyAuth, (_req: Request, res: Response) => {
     res.redirect('/api/status');
   });
+
+  // Documentação interativa Swagger UI protegida por autenticação
+  app.use(['/docs', '/api-docs'], apiKeyAuth, swaggerRouter);
+  app.get(['/docs.json', '/api-docs.json'], apiKeyAuth, (_req: Request, res: Response) => {
+    res.json(swaggerSpec);
+  });
+
+  // Rotas da API (100% protegidas)
+  app.use('/api', apiRouter);
 
   // Tratamento de rotas não encontradas (404)
   app.use((req: Request, res: Response) => {
