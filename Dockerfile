@@ -34,11 +34,8 @@ RUN npm ci --omit=dev && npm cache clean --force
 # Copia o código compilado do estágio builder
 COPY --from=builder /app/dist ./dist
 
-# Prepara o diretório de persistência de credenciais com permissão para o usuário node
-RUN mkdir -p /app/auth_info_baileys && chown -R node:node /app
-
-# Usa usuário não-root por segurança
-USER node
+# Prepara o diretório de persistência de credenciais
+RUN mkdir -p /app/auth_info_baileys
 
 # Volume montável para credenciais do WhatsApp
 VOLUME ["/app/auth_info_baileys"]

@@ -17,6 +17,11 @@ import { WASocket } from '../handlers/types.js';
 let currentSocket: WASocket | null = null;
 let isReconnecting = false;
 let isConnected = false;
+let latestQr: string | null = null;
+
+export function getLatestQr(): string | null {
+  return latestQr;
+}
 
 export interface SendMediaOptions {
   to: string;
@@ -31,7 +36,20 @@ export interface SendMediaOptions {
  * Inicia ou reconecta o socket do WhatsApp via Baileys
  */
 export async function connectToWhatsApp(): Promise<WASocket> {
-  // Garante que o diretório de autenticação exista
+  // Limpa socket anterior e seus ouvintes para evitar conflitos de conexão simultânea
+  if (currentSocket) {
+    try {
+      currentSocket.ev.removeAllListeners('connection.update');
+      currentSocket.ev.removeAllListeners('creds.update');
+      currentSocket.ev.removeAllListeners('messages.upsert');
+      currentSocket.end(undefined);
+    } catch {
+      // ignora
+    }
+    currentSocket = null;
+  }
+
+  // Garante que o diretório de autenticação exista com permissão
   if (!fs.existsSync(config.authDir)) {
     fs.mkdirSync(config.authDir, { recursive: true });
   }
@@ -39,11 +57,17 @@ export async function connectToWhatsApp(): Promise<WASocket> {
   // Carrega ou inicializa o estado de autenticação multi-device
   const { state, saveCreds } = await useMultiFileAuthState(config.authDir);
 
-  // Busca a versão mais recente suportada do WhatsApp Web
-  const { version, isLatest } = await fetchLatestBaileysVersion();
-  logger.info({ version, isLatest }, 'Versão do WhatsApp Web obtida');
+  // Busca a versão mais recente com fallback seguro
+  let version = [2, 3000, 1015901307] as [number, number, number];
+  try {
+    const v = await fetchLatestBaileysVersion();
+    version = v.version;
+    logger.info({ version, isLatest: v.isLatest }, 'Versão do WhatsApp Web obtida');
+  } catch (err) {
+    logger.warn({ err }, 'Aviso: Falha ao consultar versão mais recente, usando fallback');
+  }
 
-  // Cria a conexão de socket do Baileys
+  // Cria a conexão de socket do Baileys com opções otimizadas para Docker
   const sock = makeWASocket({
     version,
     auth: state,
@@ -51,6 +75,9 @@ export async function connectToWhatsApp(): Promise<WASocket> {
     printQRInTerminal: false,
     browser: Browsers.ubuntu('Chrome'),
     defaultQueryTimeoutMs: 60000,
+    connectTimeoutMs: 60000,
+    keepAliveIntervalMs: 25000,
+    syncFullHistory: false, // CRÍTICO: evita timeout ao carregar histórico antigo
     generateHighQualityLinkPreview: true,
   });
 
@@ -78,15 +105,20 @@ export async function connectToWhatsApp(): Promise<WASocket> {
   sock.ev.on('connection.update', (update: Partial<ConnectionState>) => {
     const { connection, lastDisconnect, qr } = update;
 
-    // Exibe o QR Code no terminal caso não esteja usando Pairing Code
-    if (qr && !config.pairingNumber) {
-      console.log('\n======================================================');
-      console.log('📲 Escaneie o QR Code abaixo com o WhatsApp do seu celular:');
-      qrcode.generate(qr, { small: true });
-      console.log('1. Abra o WhatsApp no seu celular');
-      console.log('2. Vá em Configurações / Ajustes > Aparelhos Conectados');
-      console.log('3. Toque em "Conectar um aparelho" e aponte a câmera para a tela.');
-      console.log('======================================================\n');
+    // Atualiza o QR Code atual em memória para a rota web /qr
+    if (qr) {
+      latestQr = qr;
+
+      if (!config.pairingNumber) {
+        console.log('\n======================================================');
+        console.log('📲 Escaneie o QR Code abaixo OU abra no seu navegador:');
+        console.log(`👉 http://IP_DO_SERVIDOR:${config.apiPort}/qr`);
+        qrcode.generate(qr, { small: true });
+        console.log('1. Abra o WhatsApp no seu celular');
+        console.log('2. Vá em Configurações / Ajustes > Aparelhos Conectados');
+        console.log('3. Toque em "Conectar um aparelho" e aponte a câmera.');
+        console.log('======================================================\n');
+      }
     }
 
     if (connection === 'close') {
@@ -102,11 +134,13 @@ export async function connectToWhatsApp(): Promise<WASocket> {
       if (shouldReconnect) {
         if (!isReconnecting) {
           isReconnecting = true;
-          logger.info('Tentando restabelecer conexão em 5 segundos...');
+          // Se for 515 (restartRequired), reconecta rápido (1s) para concluir pareamento
+          const delay = statusCode === DisconnectReason.restartRequired ? 1000 : 5000;
+          logger.info(`Tentando restabelecer conexão em ${delay}ms...`);
           setTimeout(() => {
             isReconnecting = false;
             connectToWhatsApp();
-          }, 5000);
+          }, delay);
         }
       } else {
         logger.error(
@@ -119,6 +153,7 @@ export async function connectToWhatsApp(): Promise<WASocket> {
     } else if (connection === 'open') {
       isConnected = true;
       isReconnecting = false;
+      latestQr = null; // Limpa o QR Code após conectar
       const userJid = sock.user?.id || 'Desconhecido';
       const userName = sock.user?.name || config.botName;
       logger.info(
@@ -128,8 +163,14 @@ export async function connectToWhatsApp(): Promise<WASocket> {
     }
   });
 
-  // Salva automaticamente as credenciais atualizadas
-  sock.ev.on('creds.update', saveCreds);
+  // Salva automaticamente as credenciais com tratamento de erro
+  sock.ev.on('creds.update', async () => {
+    try {
+      await saveCreds();
+    } catch (err) {
+      logger.error({ err }, '❌ Erro ao gravar credenciais de sessão no disco. Verifique as permissões da pasta!');
+    }
+  });
 
   // Escuta novas mensagens
   sock.ev.on('messages.upsert', async (upsert) => {
