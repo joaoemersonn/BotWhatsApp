@@ -60,8 +60,8 @@ for dir in "$PROJECTS_ROOT"/*/; do
             echo "----------------------------------------------------------------------"
             echo "[$(date '+%Y-%m-%d %H:%M:%S')] 🚀 [${project_name}] Novos commits encontrados na branch '${current_branch}'!"
 
-            # Puxa as alterações mais recentes
-            git pull origin "$current_branch"
+            # Sincroniza e força a atualização com o commit remoto (evita abort por conflito local)
+            git reset --hard "origin/$current_branch"
 
             # Procura por arquivo docker compose no projeto
             compose_file=""
@@ -94,5 +94,5 @@ done
 # Se algum projeto foi atualizado, faz limpeza de imagens antigas/órfãs
 if [ "$updated_any" -eq 1 ]; then
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] 🧹 Removendo imagens Docker antigas para liberar disco..."
-    docker image prune -f --quiet
+    docker image prune -f
 fi

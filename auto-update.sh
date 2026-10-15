@@ -27,14 +27,14 @@ REMOTE_COMMIT=$(git rev-parse "origin/$BRANCH" 2>/dev/null)
 if [ -n "$LOCAL_COMMIT" ] && [ -n "$REMOTE_COMMIT" ] && [ "$LOCAL_COMMIT" != "$REMOTE_COMMIT" ]; then
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] 🚀 Novo commit detectado na branch '${BRANCH}'! Atualizando..."
     
-    # Baixa o novo código
-    git pull origin "$BRANCH"
+    # Sincroniza e força a atualização com o commit remoto
+    git reset --hard "origin/$BRANCH"
     
     # Reconstrói a imagem Docker e força a recriação do container com o novo código
     docker compose up -d --build --force-recreate
     
     # Limpa imagens antigas para economizar disco
-    docker image prune -f --quiet
+    docker image prune -f
     
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] ✅ Aplicação atualizada e recriada com sucesso!"
 fi
