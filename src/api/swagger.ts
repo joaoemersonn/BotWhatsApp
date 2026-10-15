@@ -5,7 +5,7 @@ import { config } from '../config/env.js';
 export const swaggerSpec = {
   openapi: '3.0.0',
   info: {
-    title: '🤖 WhatsApp Bot & Reporting API',
+    title: '🤖 WhatsApp Bot',
     version: '1.0.0',
     description: `API HTTP para disparo ativo de mensagens, envio de relatórios e consulta de grupos e contatos via WhatsApp Web (Baileys).
 
