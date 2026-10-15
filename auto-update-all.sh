@@ -40,6 +40,9 @@ for dir in "$PROJECTS_ROOT"/*/; do
     (
         cd "$dir" || exit 1
 
+        # Evita erro de permissão de dono do Git no Linux (dubious ownership)
+        git config --global --add safe.directory "$dir" 2>/dev/null
+
         # Identifica dinamicamente a branch atual (main, master, develop, etc.)
         current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
         [ -z "$current_branch" ] && exit 0

@@ -4,9 +4,15 @@
 # Verifica commits novos na branch ativa e recompila o bot
 # ========================================================
 
-# Diretório onde o repositório está clonado no servidor
+# Garante comandos essenciais no PATH do cron
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+
+# Diretório onde o repositório está clonado no servidor (resolução absoluta)
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$PROJECT_DIR" || exit 1
+
+# Evita erro do Git de "dubious ownership" no Linux quando executado pelo cron
+git config --global --add safe.directory "$PROJECT_DIR" 2>/dev/null
 
 # Detecta a branch ativa (main ou master)
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
