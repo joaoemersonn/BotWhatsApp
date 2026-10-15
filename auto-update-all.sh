@@ -71,7 +71,7 @@ for dir in "$PROJECTS_ROOT"/*/; do
             # Se tiver Docker Compose, recompila e reinicia
             if [ -n "$compose_file" ]; then
                 echo "[$(date '+%Y-%m-%d %H:%M:%S')] 🐳 [${project_name}] Reconstruindo containers (${compose_file})..."
-                docker compose up -d --build
+                docker compose up -d --build --force-recreate
             fi
 
             echo "[$(date '+%Y-%m-%d %H:%M:%S')] ✅ [${project_name}] Atualizado com sucesso!"
