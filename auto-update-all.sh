@@ -17,9 +17,10 @@ export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
 PROJECTS_ROOT="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 
 # Evita que duas instâncias do script rodem juntas (trava de concorrência com flock)
-LOCK_FILE="/tmp/auto_update_all_projects.lock"
-exec 200>"$LOCK_FILE"
-flock -n 200 || {
+# Usa o UID do usuário para evitar conflitos de permissão entre root e usuário comum
+LOCK_FILE="/tmp/auto_update_$(id -u 2>/dev/null || echo 0).lock"
+exec 200>"$LOCK_FILE" 2>/dev/null || exec 200>"/tmp/auto_update_fallback_$$.lock" 2>/dev/null
+flock -n 200 2>/dev/null || {
     # Se já houver um build rodando, apenas encerra silenciosamente
     exit 0
 }
