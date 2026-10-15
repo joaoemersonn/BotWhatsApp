@@ -10,7 +10,7 @@ services:
       - .env
     # Expõe a porta da API HTTP para envio ativo de mensagens e relatórios
     ports:
-      - "${PORT:-3000}:3000"
+      - "${PORT:-3001}:3001"
     # Mapeia o diretório de credenciais para que a sessão não seja perdida ao reiniciar o container
     volumes:
       - ./auth_info_baileys:/app/auth_info_baileys
