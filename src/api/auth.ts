@@ -62,27 +62,9 @@ export function apiKeyAuth(req: Request, res: Response, next: NextFunction): voi
       'Acesso bloqueado: API Key inválida ou ausente'
     );
 
-    // Se a requisição veio de um navegador esperando HTML (ex: /docs), solicita autenticação nativa do navegador
-    const acceptsHtml = req.accepts('html') && !req.accepts('json');
-    if (acceptsHtml || req.path.startsWith('/docs') || req.path.startsWith('/api-docs')) {
-      res.setHeader('WWW-Authenticate', 'Basic realm="WhatsApp Bot - Digite sua API_KEY"');
-      res.status(401).send(`
-        <!DOCTYPE html>
-        <html>
-        <head><title>Acesso Restrito</title></head>
-        <body style="font-family: sans-serif; text-align: center; padding: 50px;">
-          <h2>🔒 Acesso Restrito</h2>
-          <p>Esta aplicação é protegida por chave de segurança.</p>
-          <p>Informe sua <strong>API_KEY</strong> para continuar.</p>
-        </body>
-        </html>
-      `);
-      return;
-    }
-
     res.status(401).json({
       success: false,
-      error: 'Não autorizado. Forneça a API Key via header "x-api-key", "Authorization: Bearer <token>" ou Basic Auth.',
+      error: 'Não autorizado. Forneça uma API Key válida via header "x-api-key", "Authorization: Bearer <token>" ou parâmetro "?key=<token>".',
     });
     return;
   }

@@ -17,23 +17,23 @@ export function createExpressApp() {
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-  // Redireciona a raiz para a documentação interativa (com autenticação)
-  app.get('/', apiKeyAuth, (_req: Request, res: Response) => {
+  // Redireciona a raiz para a documentação interativa
+  app.get('/', (_req: Request, res: Response) => {
     res.redirect('/docs');
   });
 
-  // Rota raiz de healthcheck (com autenticação)
-  app.get('/health', apiKeyAuth, (_req: Request, res: Response) => {
+  // Rota raiz de healthcheck (redireciona para /api/status que é protegido)
+  app.get('/health', (_req: Request, res: Response) => {
     res.redirect('/api/status');
   });
 
-  // Documentação interativa Swagger UI protegida por autenticação
-  app.use(['/docs', '/api-docs'], apiKeyAuth, swaggerRouter);
-  app.get(['/docs.json', '/api-docs.json'], apiKeyAuth, (_req: Request, res: Response) => {
+  // Documentação interativa Swagger UI aberta para consulta
+  app.use(['/docs', '/api-docs'], swaggerRouter);
+  app.get(['/docs.json', '/api-docs.json'], (_req: Request, res: Response) => {
     res.json(swaggerSpec);
   });
 
-  // Rotas da API (100% protegidas)
+  // Rotas da API (100% protegidas por apiKeyAuth)
   app.use('/api', apiRouter);
 
   // Tratamento de rotas não encontradas (404)
