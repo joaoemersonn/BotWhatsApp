@@ -7,6 +7,8 @@ dist/
 # Credenciais e Sessão do WhatsApp (NUNCA COMMITE ISTO!)
 auth_info_baileys/
 *.session
+*.tar.gz
+*.zip
 
 # Variáveis de Ambiente locais
 .env
