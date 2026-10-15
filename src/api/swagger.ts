@@ -17,8 +17,8 @@ Se configurada a variável \`API_KEY\` no \`.env\`, passe o token através do he
   },
   servers: [
     {
-      url: `http://localhost:${config.apiPort}`,
-      description: 'Servidor Local / Container',
+      url: '/',
+      description: 'Servidor Atual (Dinâmico)',
     },
   ],
   components: {
