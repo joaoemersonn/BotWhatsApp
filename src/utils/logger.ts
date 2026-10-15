@@ -1,17 +1,30 @@
 import pino from 'pino';
 import { config } from '../config/env.js';
 
-export const logger = pino({
-  level: config.logLevel,
-  transport:
-    config.nodeEnv === 'development'
-      ? {
+function createLogger() {
+  const isDev = config.nodeEnv === 'development';
+
+  if (isDev) {
+    try {
+      return pino({
+        level: config.logLevel,
+        transport: {
           target: 'pino-pretty',
           options: {
             colorize: true,
             ignore: 'pid,hostname',
             translateTime: 'SYS:standard',
           },
-        }
-      : undefined,
-});
+        },
+      });
+    } catch {
+      // Fallback seguro caso o pino-pretty não esteja disponível
+      return pino({ level: config.logLevel });
+    }
+  }
+
+  // Em produção, usa logger padrão otimizado (JSON estruturado)
+  return pino({ level: config.logLevel });
+}
+
+export const logger = createLogger();
