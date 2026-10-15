@@ -4,7 +4,7 @@ Bot para WhatsApp 100% gratuito, sem taxas da Meta API e sem intermediários pag
 
 ---
 
-## 🚀 Principais Recursos
+## 🚀 Principais Recursos (mais em breve)
 
 - **100% Gratuito & Auto-Hospedado:** Sem cobrança por mensagem, sem serviços de terceiros.
 - **📖 Swagger UI Integrado:** Documentação visual e interativa pronta no navegador em `/docs`.
