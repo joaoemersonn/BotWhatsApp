@@ -6,9 +6,12 @@ import {
   updateSessionStage,
   buildMainMenuText,
   buildReportsMenuText,
-  buildServicesMenuText,
+  buildAlugueisMenuText,
+  buildEstabelecimentosMenuText,
+  buildAcoesMenuText,
 } from './commands/menu.js';
 import { isContactAuthorized, isGroupAuthorized } from '../services/whitelistService.js';
+import { playboxService, PlayBoxRelatorio } from '../services/playboxService.js';
 import { config } from '../config/env.js';
 import { logger } from '../utils/logger.js';
 
@@ -173,28 +176,16 @@ export async function handleMessages(
           await reply(buildReportsMenuText());
           continue;
         } else if (cleanBody === '2') {
-          await reply(buildServicesMenuText());
+          updateSessionStage(senderJid, 'alugueis');
+          await reply(buildAlugueisMenuText());
           continue;
         } else if (cleanBody === '3') {
-          await reply(
-            '👥 *Operadores e Grupos Autorizados:*\nConsulte ou gerencie a lista através do painel Swagger em */docs*.'
-          );
+          updateSessionStage(senderJid, 'estabelecimentos');
+          await reply(buildEstabelecimentosMenuText());
           continue;
         } else if (cleanBody === '4') {
-          const cmd = commands.get('info');
-          if (cmd) {
-            await cmd.execute({
-              sock,
-              message: msg,
-              senderJid,
-              fromMe: false,
-              isGroup,
-              args: [],
-              command: 'info',
-              body: cleanBody,
-              reply,
-            });
-          }
+          updateSessionStage(senderJid, 'acoes');
+          await reply(buildAcoesMenuText());
           continue;
         } else if (cleanBody === '5') {
           updateSessionStage(senderJid, 'ai_chat');
@@ -209,6 +200,25 @@ export async function handleMessages(
             ].join('\n')
           );
           continue;
+        } else if (cleanBody === '6') {
+          try {
+            const pbHealth = await playboxService.getHealth();
+            await reply(
+              [
+                '🟢 *STATUS DOS SERVIÇOS*',
+                '',
+                '• 🤖 *WhatsApp Bot:* Conectado & Operacional',
+                `• 🎮 *PlayBox Scheduler:* ${pbHealth.status === 'UP' ? 'Online ✅' : 'Instável ⚠️'}`,
+                `• 🌐 *Porta PlayBox:* 8080`,
+                `• ⏱️ *Horário Servidor:* ${new Date().toLocaleTimeString('pt-BR')}`,
+                '',
+                '↩️ _Digite *0* para voltar ao menu principal._',
+              ].join('\n')
+            );
+          } catch {
+            await reply('⚠️ *WhatsApp Bot:* Online | *PlayBox Scheduler:* Não respondeu.');
+          }
+          continue;
         }
       }
 
@@ -220,16 +230,129 @@ export async function handleMessages(
         continue;
       }
 
-      // Se o usuário está no submenu de relatórios
+      // Submenu 1: RELATÓRIOS
       if (currentStage === 'relatorios') {
-        if (cleanBody === '1.1' || cleanBody === '1') {
-          await reply('📈 *Relatório do Dia:* Sistema em normalidade. Nenhuma pendência crítica.');
+        const { formatRelatorio } = await import('./commands/playboxFormatters.js');
+        if (cleanBody === '1') {
+          await reply('⏳ Consultando relatório das últimas 12h...');
+          try {
+            const rel = await playboxService.getRelatorio12h();
+            await reply(formatRelatorio(rel));
+          } catch (err: any) {
+            await reply(`❌ Erro ao consultar relatório 12h: ${err.message}`);
+          }
           continue;
-        } else if (cleanBody === '1.2' || cleanBody === '2') {
-          await reply('📅 *Fechamento Semanal:* Todos os relatórios foram consolidados.');
+        } else if (cleanBody === '2') {
+          await reply('⏳ Consultando relatório das últimas 24h...');
+          try {
+            const rel = await playboxService.getRelatorio24h();
+            await reply(formatRelatorio(rel));
+          } catch (err: any) {
+            await reply(`❌ Erro ao consultar relatório 24h: ${err.message}`);
+          }
           continue;
-        } else if (cleanBody === '1.3' || cleanBody === '3') {
-          await reply('📉 *Alertas:* 0 incidentes abertos nas últimas 24 horas.');
+        } else if (cleanBody === '3') {
+          await reply('⏳ Consultando acumulado do mês...');
+          try {
+            const rel = await playboxService.getRelatorioMes();
+            await reply(formatRelatorio(rel));
+          } catch (err: any) {
+            await reply(`❌ Erro ao consultar relatório mensal: ${err.message}`);
+          }
+          continue;
+        }
+      }
+
+      // Submenu 2: ALUGUÉIS & REPASSES
+      if (currentStage === 'alugueis') {
+        const { formatAlugueis } = await import('./commands/playboxFormatters.js');
+        if (cleanBody === '1') {
+          await reply('⏳ Buscando aluguéis vencendo nos próximos 7 dias...');
+          try {
+            const al = await playboxService.getAlugueisVencendo(7);
+            await reply(formatAlugueis(al, 'Aluguéis Vencendo (Próximos 7 Dias)'));
+          } catch (err: any) {
+            await reply(`❌ Erro ao buscar vencimentos: ${err.message}`);
+          }
+          continue;
+        } else if (cleanBody === '2') {
+          await reply('⏳ Buscando pagamentos pendentes...');
+          try {
+            const al = await playboxService.getAlugueisPendentes();
+            await reply(formatAlugueis(al, 'Aluguéis com Pagamento Pendente'));
+          } catch (err: any) {
+            await reply(`❌ Erro ao buscar pendentes: ${err.message}`);
+          }
+          continue;
+        } else if (cleanBody === '3') {
+          await reply('⏳ Buscando pagamentos efetuados...');
+          try {
+            const al = await playboxService.getAlugueisPagos();
+            await reply(formatAlugueis(al, 'Aluguéis Já Pagos'));
+          } catch (err: any) {
+            await reply(`❌ Erro ao buscar pagos: ${err.message}`);
+          }
+          continue;
+        }
+      }
+
+      // Submenu 3: ESTABELECIMENTOS & PIX
+      if (currentStage === 'estabelecimentos') {
+        const { formatEstabelecimentos } = await import('./commands/playboxFormatters.js');
+        if (cleanBody === '1') {
+          await reply('⏳ Carregando lista de estabelecimentos...');
+          try {
+            const ests = await playboxService.getEstabelecimentos();
+            await reply(formatEstabelecimentos(ests));
+          } catch (err: any) {
+            await reply(`❌ Erro ao listar estabelecimentos: ${err.message}`);
+          }
+          continue;
+        } else if (cleanBody === '2') {
+          await reply(
+            '🔑 *Consulta de PIX:*\nDigite o ID ou parte do nome do estabelecimento (ou envie *0* para voltar).'
+          );
+          continue;
+        }
+      }
+
+      // Submenu 4: AÇÕES & DISPAROS
+      if (currentStage === 'acoes') {
+        if (cleanBody === '1') {
+          await reply('🚀 Disparando envio do relatório de faturamento nos grupos...');
+          try {
+            await playboxService.triggerReport();
+            await reply('✅ Relatório enviado com sucesso!');
+          } catch (err: any) {
+            await reply(`❌ Erro ao disparar relatório: ${err.message}`);
+          }
+          continue;
+        } else if (cleanBody === '2') {
+          await reply('🔍 Iniciando verificação de máquinas offline...');
+          try {
+            await playboxService.triggerMonitor();
+            await reply('✅ Monitoramento concluído com sucesso!');
+          } catch (err: any) {
+            await reply(`❌ Erro no monitoramento: ${err.message}`);
+          }
+          continue;
+        } else if (cleanBody === '3') {
+          await reply('🔄 Disparando sincronização de transações das integradoras...');
+          try {
+            await playboxService.triggerImportTransactions();
+            await reply('✅ Sincronização de transações iniciada!');
+          } catch (err: any) {
+            await reply(`❌ Erro ao sincronizar transações: ${err.message}`);
+          }
+          continue;
+        } else if (cleanBody === '4') {
+          await reply('🕹️ Descobrindo novas máquinas nas integradoras...');
+          try {
+            await playboxService.syncMaquinas();
+            await reply('✅ Sincronização de máquinas finalizada!');
+          } catch (err: any) {
+            await reply(`❌ Erro ao sincronizar máquinas: ${err.message}`);
+          }
           continue;
         }
       }

@@ -1,7 +1,16 @@
 import { Command } from '../types.js';
 
+export type SessionStage =
+  | 'idle'
+  | 'menu_principal'
+  | 'relatorios'
+  | 'alugueis'
+  | 'estabelecimentos'
+  | 'acoes'
+  | 'ai_chat';
+
 interface UserSession {
-  stage: 'idle' | 'menu_principal' | 'relatorios' | 'operacao' | 'ai_chat';
+  stage: SessionStage;
   lastActivity: number;
 }
 
@@ -20,63 +29,93 @@ function getSession(jid: string): UserSession {
   return session;
 }
 
-export function updateSessionStage(jid: string, stage: UserSession['stage']): void {
+export function updateSessionStage(jid: string, stage: SessionStage): void {
   const session = getSession(jid);
   session.stage = stage;
   session.lastActivity = Date.now();
 }
 
-export function getUserStage(jid: string): UserSession['stage'] {
+export function getUserStage(jid: string): SessionStage {
   return getSession(jid).stage;
 }
 
 export function buildMainMenuText(): string {
   return [
-    '⚙️ *PAINEL DE GERENCIAMENTO DA OPERAÇÃO*',
+    '🎮 *PAINEL DE OPERAÇÕES PLAYBOX*',
     '',
-    'Olá, operador! Escolha uma das opções abaixo digitando o número correspondente:',
+    'Olá, operador! Escolha uma das categorias abaixo:',
     '',
-    '1️⃣ - 📊 *Relatórios da Operação*',
-    '2️⃣ - 🟢 *Status e Saúde dos Serviços*',
-    '3️⃣ - 👥 *Verificar Operadores & Grupos*',
-    '4️⃣ - ℹ️ *Informações do Bot / Servidor*',
-    '5️⃣ - 🤖 *Assistente IA (Copiloto da Operação)*',
+    '1️⃣ - 📊 *Relatórios de Faturamento*',
+    '2️⃣ - 💰 *Aluguéis & Repasses*',
+    '3️⃣ - 📍 *Estabelecimentos & Chaves PIX*',
+    '4️⃣ - ⚡ *Ações & Sincronizações*',
+    '5️⃣ - 🤖 *Assistente IA (Copiloto)*',
+    '6️⃣ - 🟢 *Status dos Serviços*',
     '',
-    '💡 _Envie *0* a qualquer momento para cancelar ou voltar ao início._',
+    '💡 _Envie *0* a qualquer momento para voltar ao início._',
   ].join('\n');
 }
 
 export function buildReportsMenuText(): string {
   return [
-    '📊 *MENU DE RELATÓRIOS*',
+    '📊 *RELATÓRIOS DE FATURAMENTO*',
     '',
-    'Selecione o relatório que deseja gerar:',
+    'Escolha o período que deseja consultar:',
     '',
-    '1.1 - 📈 Resumo do Dia',
-    '1.2 - 📅 Fechamento Semanal',
-    '1.3 - 📉 Alertas e Ocorrências Recentes',
+    '1️⃣ - ⏱️ Últimas 12 Horas',
+    '2️⃣ - 📅 Últimas 24 Horas (Ontem)',
+    '3️⃣ - 🗓️ Acumulado do Mês Atual',
     '',
-    '↩️ _Digite *0* para voltar ao menu principal._',
+    '↩️ _Envie *0* para voltar ao menu principal._',
   ].join('\n');
 }
 
-export function buildServicesMenuText(): string {
+export function buildAlugueisMenuText(): string {
   return [
-    '🟢 *STATUS DOS SERVIÇOS*',
+    '💰 *ALUGUÉIS & REPASSES*',
     '',
-    '• 🤖 *WhatsApp Bot:* Conectado & Operacional',
-    '• 🌐 *API HTTP:* Ativa na porta 3000',
-    '• 💾 *Sessão:* Persistida com sucesso',
-    '• ⏱️ *Uptime:* Bot ativo e monitorando',
+    'Escolha uma das consultas:',
     '',
-    '↩️ _Digite *0* para voltar ao menu principal._',
+    '1️⃣ - ⏳ Vencendo nos Próximos 7 Dias',
+    '2️⃣ - 🔴 Pagamentos Pendentes',
+    '3️⃣ - 🟢 Pagamentos Já Efetuados',
+    '',
+    '↩️ _Envie *0* para voltar ao menu principal._',
+  ].join('\n');
+}
+
+export function buildEstabelecimentosMenuText(): string {
+  return [
+    '📍 *ESTABELECIMENTOS & PIX*',
+    '',
+    'Escolha uma das opções:',
+    '',
+    '1️⃣ - 📋 Listar Todos os Estabelecimentos Ativos',
+    '2️⃣ - 🔑 Consultar Chave PIX de um Local',
+    '',
+    '↩️ _Envie *0* para voltar ao menu principal._',
+  ].join('\n');
+}
+
+export function buildAcoesMenuText(): string {
+  return [
+    '⚡ *AÇÕES & DISPAROS DA OPERAÇÃO*',
+    '',
+    'Execute comandos manuais no PlayBox:',
+    '',
+    '1️⃣ - 🚀 Forçar Envio do Relatório nos Grupos',
+    '2️⃣ - 🔍 Disparar Verificação de Máquinas Offline',
+    '3️⃣ - 🔄 Sincronizar Transações das Integradoras',
+    '4️⃣ - 🕹️ Descobrir e Sincronizar Novas Máquinas',
+    '',
+    '↩️ _Envie *0* para voltar ao menu principal._',
   ].join('\n');
 }
 
 export const menuCommand: Command = {
   name: 'menu',
-  description: 'Exibe o menu interativo de gerenciamento da operação',
-  aliases: ['painel', 'operacao', 'op'],
+  description: 'Exibe o menu interativo de gerenciamento da operação PlayBox',
+  aliases: ['painel', 'operacao', 'op', 'playbox'],
   execute: async ({ reply, senderJid }) => {
     updateSessionStage(senderJid, 'menu_principal');
     await reply(buildMainMenuText());

@@ -16,6 +16,8 @@ export interface BotConfig {
   apiPort: number;
   apiKey?: string;
   geminiApiKey?: string;
+  playboxBaseUrl: string;
+  playboxApiKey?: string;
 }
 
 export const config: BotConfig = {
@@ -30,4 +32,6 @@ export const config: BotConfig = {
   apiPort: Number(process.env.PORT || process.env.API_PORT || 3000),
   apiKey: process.env.API_KEY?.trim() || undefined,
   geminiApiKey: process.env.GEMINI_API_KEY?.trim() || undefined,
+  playboxBaseUrl: process.env.PLAYBOX_BASE_URL || 'http://playbox-scheduler:8080',
+  playboxApiKey: process.env.PLAYBOX_API_KEY?.trim() || process.env.APP_API_KEY?.trim() || undefined,
 };
