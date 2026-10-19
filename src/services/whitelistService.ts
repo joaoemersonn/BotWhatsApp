@@ -4,6 +4,7 @@ import { logger } from '../utils/logger.js';
 
 export interface WhitelistContact {
   phone: string;
+  lid?: string;
   name?: string;
   addedAt: string;
 }
@@ -33,11 +34,13 @@ if (!fs.existsSync(WHITELIST_FILE)) {
     contacts: [
       {
         phone: '5587981362724',
+        lid: '61186238329075',
         name: 'Administrador / Operador',
         addedAt: new Date().toISOString(),
       },
       {
         phone: '558781362724',
+        lid: '61186238329075',
         name: 'Administrador / Operador (sem 9)',
         addedAt: new Date().toISOString(),
       },
@@ -89,29 +92,31 @@ export function normalizeGroupId(groupId: string): string {
 /**
  * Adiciona um contato/operador autorizado
  */
-export function addAuthorizedContact(phone: string, name?: string): WhitelistContact {
+export function addAuthorizedContact(phone: string, name?: string, lid?: string): WhitelistContact {
   const clean = normalizePhone(phone);
   if (!clean || clean.length < 8) {
     throw new Error('Número de telefone inválido.');
   }
 
   const data = getWhitelist();
-  const existing = data.contacts.find((c) => c.phone === clean);
+  const existing = data.contacts.find((c) => c.phone === clean || (lid && c.lid === lid));
   if (existing) {
     if (name) existing.name = name;
+    if (lid) existing.lid = lid;
     saveWhitelist(data);
     return existing;
   }
 
   const newContact: WhitelistContact = {
     phone: clean,
+    lid: lid || undefined,
     name: name || undefined,
     addedAt: new Date().toISOString(),
   };
 
   data.contacts.push(newContact);
   saveWhitelist(data);
-  logger.info({ phone: clean, name }, 'Contato adicionado à whitelist');
+  logger.info({ phone: clean, name, lid }, 'Contato adicionado à whitelist');
   return newContact;
 }
 
@@ -180,6 +185,11 @@ export function isContactAuthorized(phoneOrJid: string): boolean {
   const data = getWhitelist();
 
   const isAuth = data.contacts.some((c) => {
+    // Se a mensagem veio com LID (ex: 61186238329075@lid) e o contato tem esse LID associado
+    if (c.lid && (c.lid === clean || c.lid === userPart || phoneOrJid.startsWith(c.lid))) {
+      return true;
+    }
+
     const contactClean = normalizePhone(c.phone);
     if (contactClean === clean) return true;
 
