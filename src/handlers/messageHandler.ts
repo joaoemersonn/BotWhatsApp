@@ -61,6 +61,8 @@ export async function handleMessages(
   sock: WASocket,
   upsert: { messages: proto.IWebMessageInfo[]; type: string }
 ): Promise<void> {
+  logger.info({ type: upsert.type, count: upsert.messages.length }, 'Evento messages.upsert recebido');
+
   if (upsert.type !== 'notify') return;
 
   const botJid = sock.user?.id?.split(':')[0] || '';
@@ -71,6 +73,10 @@ export async function handleMessages(
       if (!key || !key.remoteJid) continue;
 
       const remoteJid = key.remoteJid;
+      logger.info(
+        { remoteJid, fromMe: key.fromMe, participant: key.participant },
+        'Nova mensagem interceptada'
+      );
 
       // Ignora status broadcast
       if (remoteJid === 'status@broadcast') continue;
