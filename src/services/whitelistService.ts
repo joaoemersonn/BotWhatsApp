@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { logger } from '../utils/logger.js';
+import { config } from '../config/env.js';
 
 export interface WhitelistContact {
   phone: string;
@@ -22,6 +23,52 @@ export interface WhitelistData {
 
 const DATA_DIR = path.resolve(process.cwd(), 'data');
 const WHITELIST_FILE = path.join(DATA_DIR, 'whitelist.json');
+
+/**
+ * Consulta os mapeamentos do Baileys para resolver o número de telefone a partir de um LID
+ */
+export function getPhoneForLid(lid: string): string | null {
+  try {
+    const cleanLid = normalizePhone((lid.split('@')[0] || '').split(':')[0]);
+    const reverseFile = path.join(config.authDir, `lid-mapping-${cleanLid}_reverse.json`);
+    if (fs.existsSync(reverseFile)) {
+      const raw = fs.readFileSync(reverseFile, 'utf-8');
+      const phone = JSON.parse(raw);
+      if (phone) return normalizePhone(String(phone));
+    }
+  } catch (err) {
+    logger.debug({ err, lid }, 'Erro ao ler arquivo reverse LID mapping');
+  }
+  return null;
+}
+
+/**
+ * Consulta os mapeamentos do Baileys para resolver o LID a partir de um número de telefone
+ */
+export function getLidForPhone(phone: string): string | null {
+  try {
+    const clean = normalizePhone(phone);
+    const variations = [clean];
+    if (clean.startsWith('55') && clean.length === 13) {
+      // Com e sem nono dígito
+      variations.push(clean.slice(0, 4) + clean.slice(5));
+    } else if (clean.startsWith('55') && clean.length === 12) {
+      variations.push(clean.slice(0, 4) + '9' + clean.slice(4));
+    }
+
+    for (const v of variations) {
+      const mapFile = path.join(config.authDir, `lid-mapping-${v}.json`);
+      if (fs.existsSync(mapFile)) {
+        const raw = fs.readFileSync(mapFile, 'utf-8');
+        const lid = JSON.parse(raw);
+        if (lid) return String(lid);
+      }
+    }
+  } catch (err) {
+    logger.debug({ err, phone }, 'Erro ao ler arquivo LID mapping');
+  }
+  return null;
+}
 
 // Garante que o diretório data exista
 if (!fs.existsSync(DATA_DIR)) {
@@ -98,25 +145,28 @@ export function addAuthorizedContact(phone: string, name?: string, lid?: string)
     throw new Error('Número de telefone inválido.');
   }
 
+  // Tenta resolver automaticamente o LID associado a esse telefone nos arquivos da sessão
+  const resolvedLid = lid || getLidForPhone(clean);
+
   const data = getWhitelist();
-  const existing = data.contacts.find((c) => c.phone === clean || (lid && c.lid === lid));
+  const existing = data.contacts.find((c) => c.phone === clean || (resolvedLid && c.lid === resolvedLid));
   if (existing) {
     if (name) existing.name = name;
-    if (lid) existing.lid = lid;
+    if (resolvedLid) existing.lid = resolvedLid;
     saveWhitelist(data);
     return existing;
   }
 
   const newContact: WhitelistContact = {
     phone: clean,
-    lid: lid || undefined,
+    lid: resolvedLid || undefined,
     name: name || undefined,
     addedAt: new Date().toISOString(),
   };
 
   data.contacts.push(newContact);
   saveWhitelist(data);
-  logger.info({ phone: clean, name, lid }, 'Contato adicionado à whitelist');
+  logger.info({ phone: clean, name, lid: resolvedLid }, 'Contato adicionado à whitelist');
   return newContact;
 }
 
@@ -179,46 +229,60 @@ export function removeAuthorizedGroup(groupId: string): boolean {
  * Verifica se um número de telefone é um operador autorizado
  */
 export function isContactAuthorized(phoneOrJid: string): boolean {
-  // Baileys pode entregar JIDs com sufixo de dispositivo, ex: 558781362724:12@s.whatsapp.net
+  // Baileys pode entregar JIDs com sufixo de dispositivo, ex: 558781362724:12@s.whatsapp.net ou 61186238329075@lid
   const userPart = (phoneOrJid.split('@')[0] || '').split(':')[0];
   const clean = normalizePhone(userPart);
+  const isLid = phoneOrJid.endsWith('@lid') || phoneOrJid.includes('@lid');
+  const mappedPhone = isLid ? getPhoneForLid(userPart) : null;
+
   const data = getWhitelist();
 
   const isAuth = data.contacts.some((c) => {
-    // Se a mensagem veio com LID (ex: 61186238329075@lid) e o contato tem esse LID associado
+    // 1. Se a mensagem veio com LID e o contato já tem esse LID salvo
     if (c.lid && (c.lid === clean || c.lid === userPart || phoneOrJid.startsWith(c.lid))) {
       return true;
     }
 
+    // 2. Se a mensagem veio com LID e conseguimos mapear para o telefone real pela sessão
+    if (mappedPhone) {
+      const contactClean = normalizePhone(c.phone);
+      if (contactClean === mappedPhone) return true;
+      if (checkPhoneMatch(contactClean, mappedPhone)) return true;
+    }
+
+    // 3. Comparação direta de número de telefone
     const contactClean = normalizePhone(c.phone);
     if (contactClean === clean) return true;
 
-    // Se ambos terminarem com o mesmo número local (últimos 8 ou 9 dígitos com DDD)
-    // Ex: 87981362724 ou 8781362724
-    const cleanWithout55 = clean.startsWith('55') ? clean.slice(2) : clean;
-    const contactWithout55 = contactClean.startsWith('55') ? contactClean.slice(2) : contactClean;
-
-    if (cleanWithout55 === contactWithout55) return true;
-
-    // Variação de nono dígito (com mesmo DDD)
-    if (cleanWithout55.length === 11 && contactWithout55.length === 10) {
-      // clean tem 9 dígitos, contact tem 8
-      if (cleanWithout55.slice(0, 2) === contactWithout55.slice(0, 2) &&
-          cleanWithout55.slice(3) === contactWithout55.slice(2)) {
-        return true;
-      }
-    } else if (cleanWithout55.length === 10 && contactWithout55.length === 11) {
-      // clean tem 8 dígitos, contact tem 9
-      if (cleanWithout55.slice(0, 2) === contactWithout55.slice(0, 2) &&
-          contactWithout55.slice(3) === cleanWithout55.slice(2)) {
-        return true;
-      }
-    }
-
-    return false;
+    return checkPhoneMatch(contactClean, clean);
   });
 
   return isAuth;
+}
+
+/**
+ * Helper para comparar telefones considerando DDI e nono dígito do Brasil
+ */
+function checkPhoneMatch(phoneA: string, phoneB: string): boolean {
+  const aWithout55 = phoneA.startsWith('55') ? phoneA.slice(2) : phoneA;
+  const bWithout55 = phoneB.startsWith('55') ? phoneB.slice(2) : phoneB;
+
+  if (aWithout55 === bWithout55) return true;
+
+  // Variação de nono dígito (com mesmo DDD)
+  if (aWithout55.length === 11 && bWithout55.length === 10) {
+    if (aWithout55.slice(0, 2) === bWithout55.slice(0, 2) &&
+        aWithout55.slice(3) === bWithout55.slice(2)) {
+      return true;
+    }
+  } else if (aWithout55.length === 10 && bWithout55.length === 11) {
+    if (aWithout55.slice(0, 2) === bWithout55.slice(0, 2) &&
+        bWithout55.slice(3) === aWithout55.slice(2)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 /**
