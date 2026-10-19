@@ -1,7 +1,7 @@
 import { Command } from '../types.js';
 
 interface UserSession {
-  stage: 'idle' | 'menu_principal' | 'relatorios' | 'operacao';
+  stage: 'idle' | 'menu_principal' | 'relatorios' | 'operacao' | 'ai_chat';
   lastActivity: number;
 }
 
@@ -40,6 +40,7 @@ export function buildMainMenuText(): string {
     '2️⃣ - 🟢 *Status e Saúde dos Serviços*',
     '3️⃣ - 👥 *Verificar Operadores & Grupos*',
     '4️⃣ - ℹ️ *Informações do Bot / Servidor*',
+    '5️⃣ - 🤖 *Assistente IA (Copiloto da Operação)*',
     '',
     '💡 _Envie *0* a qualquer momento para cancelar ou voltar ao início._',
   ].join('\n');

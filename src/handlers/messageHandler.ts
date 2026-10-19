@@ -196,7 +196,28 @@ export async function handleMessages(
             });
           }
           continue;
+        } else if (cleanBody === '5') {
+          updateSessionStage(senderJid, 'ai_chat');
+          await reply(
+            [
+              '🤖 *MODO ASSISTENTE IA ATIVADO*',
+              '',
+              'Você entrou no chat com a inteligência artificial da operação!',
+              'Pode enviar qualquer pergunta ou mensagem a partir de agora.',
+              '',
+              '💡 _Digite *0* ou *voltar* para sair do modo IA e retornar ao menu principal._',
+            ].join('\n')
+          );
+          continue;
         }
+      }
+
+      // Se o usuário está em conversação direta com a IA
+      if (currentStage === 'ai_chat') {
+        const { askGemini } = await import('../services/aiService.js');
+        const answer = await askGemini(senderJid, cleanBody);
+        await reply(answer);
+        continue;
       }
 
       // Se o usuário está no submenu de relatórios

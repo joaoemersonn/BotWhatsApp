@@ -2,6 +2,7 @@ import { Command } from '../types.js';
 import { pingCommand } from './ping.js';
 import { infoCommand } from './info.js';
 import { menuCommand } from './menu.js';
+import { aiCommand } from './ai.js';
 import { config } from '../../config/env.js';
 
 export const commands = new Map<string, Command>();
@@ -50,3 +51,4 @@ register(helpCommand);
 register(pingCommand);
 register(infoCommand);
 register(menuCommand);
+register(aiCommand);
