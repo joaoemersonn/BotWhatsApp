@@ -158,7 +158,52 @@ export async function handleMessages(
       let cleanBody = body.replace(/@\d+/g, '').trim();
 
       // =========================================================================
-      // 🧭 MÁQUINA DE ESTADOS / NAVEGAÇÃO DE SUBMENUS
+      // 👥 COMPORTAMENTO EM GRUPOS: DEFAULT É A IA (COPILOTO INTELIGENTE)
+      // =========================================================================
+      if (isGroup) {
+        // Se no grupo alguém mandar explicitamente "/menu", abre o menu
+        if (cleanBody === '/menu' || cleanBody === '!menu' || cleanBody.toLowerCase() === 'menu') {
+          updateSessionStage(senderJid, 'menu_principal');
+          await reply(buildMainMenuText());
+          continue;
+        }
+
+        // Se for comando explícito com prefixo que existe na lista de comandos (ex: !ping, !info)
+        const startsWithPrefix = cleanBody.startsWith(config.botPrefix) || cleanBody.startsWith('/');
+        const prefixUsed = cleanBody.startsWith('/') ? '/' : config.botPrefix;
+        if (startsWithPrefix) {
+          const cmdName = cleanBody.slice(prefixUsed.length).trim().split(/\s+/)[0]?.toLowerCase();
+          const cmd = commands.get(cmdName);
+          if (cmd && cmdName !== 'ia' && cmdName !== 'ai') {
+            const args = cleanBody.slice(prefixUsed.length).trim().split(/\s+/).slice(1);
+            await cmd.execute({
+              sock,
+              message: msg,
+              senderJid,
+              fromMe: key.fromMe ?? false,
+              isGroup: true,
+              args,
+              command: cmdName,
+              body: cleanBody,
+              reply,
+            });
+            continue;
+          }
+        }
+
+        // Em todos os outros casos no grupo (menção @bot ou pergunta direta): CHAMA A IA DIRETO
+        // Remove comando "/ia" se tiver sido escrito
+        const promptText = cleanBody.replace(/^\/(ia|ai)\s*/i, '').replace(/^!(ia|ai)\s*/i, '').trim();
+        if (promptText) {
+          const { askGemini } = await import('../services/aiService.js');
+          const answer = await askGemini(senderJid, promptText);
+          await reply(answer);
+        }
+        continue;
+      }
+
+      // =========================================================================
+      // 🧭 MÁQUINA DE ESTADOS / NAVEGAÇÃO DE SUBMENUS (PRIVADO)
       // =========================================================================
       const currentStage = getUserStage(senderJid);
 
