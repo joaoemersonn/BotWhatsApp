@@ -89,10 +89,10 @@ export async function askGemini(userId: string, prompt: string): Promise<string>
 
   // Lista de modelos suportados com fallback automático
   const models = [
-    'gemini-3.6-flash',
     'gemini-3.5-flash-lite',
     'gemini-3.1-flash-lite',
     'gemini-3-flash-preview',
+    'gemini-3.6-flash',
     'gemini-3.8-flash',
   ];
 
