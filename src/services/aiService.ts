@@ -2,10 +2,11 @@ import fs from 'fs';
 import path from 'path';
 import { config } from '../config/env.js';
 import { logger } from '../utils/logger.js';
+import { playboxToolsDeclaration, executePlayboxTool } from './aiTools.js';
 
 interface ChatMessage {
   role: 'user' | 'model';
-  parts: [{ text: string }];
+  parts: Array<any>;
 }
 
 // Histórico de conversas em memória por usuário (expira após 30 minutos de inatividade)
@@ -25,7 +26,7 @@ export function getSystemInstruction(): string {
     logger.error({ err }, 'Erro ao ler arquivo de contexto da IA');
   }
 
-  return 'Você é o assistente virtual inteligente da operação. Responda de forma clara, prestativa e objetiva com formatação do WhatsApp.';
+  return 'Você é o assistente virtual inteligente da operação PlayBox. Responda de forma clara, prestativa e objetiva com formatação do WhatsApp.';
 }
 
 /**
@@ -64,7 +65,7 @@ export function clearUserHistory(jid: string): void {
 }
 
 /**
- * Envia uma mensagem para o Google Gemini e retorna a resposta
+ * Envia uma mensagem para o Google Gemini com suporte total a Function Calling
  */
 export async function askGemini(userId: string, prompt: string): Promise<string> {
   const apiKey = config.geminiApiKey;
@@ -81,54 +82,90 @@ export async function askGemini(userId: string, prompt: string): Promise<string>
     parts: [{ text: prompt }],
   });
 
-  // Mantém no máximo as últimas 10 interações (20 mensagens) para economizar contexto e tokens
-  if (history.length > 20) {
-    history.splice(0, history.length - 20);
+  // Limite de mensagens mantidas para histórico
+  if (history.length > 25) {
+    history.splice(0, history.length - 25);
   }
-
-  const requestBody = {
-    contents: history,
-    system_instruction: {
-      parts: [{ text: systemInstruction }],
-    },
-    generationConfig: {
-      temperature: 0.7,
-      maxOutputTokens: 1000,
-    },
-  };
 
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
   try {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(requestBody),
-    });
+    // Loop de resolução de Function Calling (máximo 4 iterações consecutivas de chamadas)
+    for (let round = 0; round < 4; round++) {
+      const requestBody = {
+        contents: history,
+        system_instruction: {
+          parts: [{ text: systemInstruction }],
+        },
+        tools: playboxToolsDeclaration,
+        generationConfig: {
+          temperature: 0.5,
+          maxOutputTokens: 1500,
+        },
+      };
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      logger.error({ status: response.status, errorText }, 'Erro na resposta do Gemini');
-      return '❌ Desculpe, não consegui processar sua solicitação no momento.';
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        logger.error({ status: response.status, errorText }, 'Erro na resposta do Gemini');
+        return '❌ Desculpe, não consegui processar sua solicitação no momento.';
+      }
+
+      const data: any = await response.json();
+      const candidate = data?.candidates?.[0];
+      const parts = candidate?.content?.parts || [];
+
+      // Verifica se o modelo solicitou uma ou mais chamadas de função (functionCall)
+      const functionCalls = parts.filter((p: any) => p.functionCall);
+
+      if (functionCalls.length > 0) {
+        // Registra no histórico o pensamento / chamada do modelo
+        history.push({
+          role: 'model',
+          parts,
+        });
+
+        // Executa todas as function calls solicitadas
+        const toolResponses: any[] = [];
+        for (const fc of functionCalls) {
+          const { name, args } = fc.functionCall;
+          const result = await executePlayboxTool(name, args || {});
+          toolResponses.push({
+            functionResponse: {
+              name,
+              response: { result },
+            },
+          });
+        }
+
+        // Devolve os resultados para o Gemini gerar a resposta final formatada
+        history.push({
+          role: 'user',
+          parts: toolResponses,
+        });
+
+        continue; // Continua o loop para a próxima resposta
+      }
+
+      // Se não houve function call, obtém o texto final
+      const replyText = parts.find((p: any) => p.text)?.text;
+      if (replyText) {
+        history.push({
+          role: 'model',
+          parts: [{ text: replyText }],
+        });
+        return replyText.trim();
+      }
+
+      break;
     }
 
-    const data: any = await response.json();
-    const candidate = data?.candidates?.[0];
-    const replyText = candidate?.content?.parts?.[0]?.text;
-
-    if (!replyText) {
-      return '⚠️ Não obtive resposta do modelo de IA.';
-    }
-
-    // Salva a resposta do modelo no histórico
-    history.push({
-      role: 'model',
-      parts: [{ text: replyText }],
-    });
-
-    return replyText.trim();
+    return '⚠️ Não consegui formatar uma resposta final.';
   } catch (error: any) {
     logger.error({ err: error }, 'Falha na requisição para o Gemini');
     return `❌ Erro ao conectar com o serviço de IA: ${error.message}`;
