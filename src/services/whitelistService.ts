@@ -29,7 +29,21 @@ if (!fs.existsSync(DATA_DIR)) {
 
 // Inicializa o arquivo se não existir
 if (!fs.existsSync(WHITELIST_FILE)) {
-  const initialData: WhitelistData = { contacts: [], groups: [] };
+  const initialData: WhitelistData = {
+    contacts: [
+      {
+        phone: '5587981362724',
+        name: 'Administrador / Operador',
+        addedAt: new Date().toISOString(),
+      },
+      {
+        phone: '558781362724',
+        name: 'Administrador / Operador (sem 9)',
+        addedAt: new Date().toISOString(),
+      },
+    ],
+    groups: [],
+  };
   fs.writeFileSync(WHITELIST_FILE, JSON.stringify(initialData, null, 2), 'utf-8');
 }
 
@@ -165,23 +179,36 @@ export function isContactAuthorized(phoneOrJid: string): boolean {
   const clean = normalizePhone(userPart);
   const data = getWhitelist();
 
-  // Verifica tanto o número exato quanto variações comuns de 9 dígitos (ex: Brasil)
-  return data.contacts.some((c) => {
-    if (c.phone === clean) return true;
+  const isAuth = data.contacts.some((c) => {
+    const contactClean = normalizePhone(c.phone);
+    if (contactClean === clean) return true;
 
-    // Trata número brasileiro com/sem nono dígito (DDI 55 + DDD 2 dígitos + 8/9 dígitos)
-    if (c.phone.startsWith('55') && clean.startsWith('55')) {
-      const dddA = c.phone.substring(2, 4);
-      const dddB = clean.substring(2, 4);
-      if (dddA === dddB) {
-        const numA = c.phone.substring(4);
-        const numB = clean.substring(4);
-        if (numA.length === 9 && numB.length === 8 && numA.substring(1) === numB) return true;
-        if (numA.length === 8 && numB.length === 9 && numB.substring(1) === numA) return true;
+    // Se ambos terminarem com o mesmo número local (últimos 8 ou 9 dígitos com DDD)
+    // Ex: 87981362724 ou 8781362724
+    const cleanWithout55 = clean.startsWith('55') ? clean.slice(2) : clean;
+    const contactWithout55 = contactClean.startsWith('55') ? contactClean.slice(2) : contactClean;
+
+    if (cleanWithout55 === contactWithout55) return true;
+
+    // Variação de nono dígito (com mesmo DDD)
+    if (cleanWithout55.length === 11 && contactWithout55.length === 10) {
+      // clean tem 9 dígitos, contact tem 8
+      if (cleanWithout55.slice(0, 2) === contactWithout55.slice(0, 2) &&
+          cleanWithout55.slice(3) === contactWithout55.slice(2)) {
+        return true;
+      }
+    } else if (cleanWithout55.length === 10 && contactWithout55.length === 11) {
+      // clean tem 8 dígitos, contact tem 9
+      if (cleanWithout55.slice(0, 2) === contactWithout55.slice(0, 2) &&
+          contactWithout55.slice(3) === cleanWithout55.slice(2)) {
+        return true;
       }
     }
+
     return false;
   });
+
+  return isAuth;
 }
 
 /**

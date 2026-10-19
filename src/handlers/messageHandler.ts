@@ -131,12 +131,18 @@ export async function handleMessages(
       );
 
       const reply = async (text: string, quoted: boolean = true) => {
-        await simulateTyping(sock, remoteJid);
-        return await sock.sendMessage(
-          remoteJid,
-          { text },
-          quoted ? { quoted: msg as any } : undefined
-        );
+        try {
+          await simulateTyping(sock, remoteJid);
+          const sent = await sock.sendMessage(
+            remoteJid,
+            { text },
+            quoted ? { quoted: msg as any } : undefined
+          );
+          logger.info({ remoteJid, messageId: sent?.key?.id }, 'Resposta enviada com sucesso');
+          return sent;
+        } catch (sendErr) {
+          logger.error({ err: sendErr, remoteJid }, 'Erro ao disparar resposta no WhatsApp');
+        }
       };
 
       // Limpa possíveis menções (@5511...) do corpo do texto
