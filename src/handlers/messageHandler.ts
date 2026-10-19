@@ -6,6 +6,7 @@ import {
   updateSessionStage,
   buildMainMenuText,
   buildReportsMenuText,
+  buildEstoqueMenuText,
   buildAlugueisMenuText,
   buildEstabelecimentosMenuText,
   buildAcoesMenuText,
@@ -341,21 +342,26 @@ export async function handleMessages(
           await reply(buildReportsMenuText());
           continue;
         } else if (cleanBody === '2') {
+          updateSessionStage(senderJid, 'estoque');
+          await setReaction(sock, remoteJid, key, '✅');
+          await reply(buildEstoqueMenuText());
+          continue;
+        } else if (cleanBody === '3') {
           updateSessionStage(senderJid, 'alugueis');
           await setReaction(sock, remoteJid, key, '✅');
           await reply(buildAlugueisMenuText());
           continue;
-        } else if (cleanBody === '3') {
+        } else if (cleanBody === '4') {
           updateSessionStage(senderJid, 'estabelecimentos');
           await setReaction(sock, remoteJid, key, '✅');
           await reply(buildEstabelecimentosMenuText());
           continue;
-        } else if (cleanBody === '4') {
+        } else if (cleanBody === '5') {
           updateSessionStage(senderJid, 'acoes');
           await setReaction(sock, remoteJid, key, '✅');
           await reply(buildAcoesMenuText());
           continue;
-        } else if (cleanBody === '5') {
+        } else if (cleanBody === '6') {
           updateSessionStage(senderJid, 'ai_chat');
           await setReaction(sock, remoteJid, key, '🤖');
           await reply(
@@ -369,7 +375,7 @@ export async function handleMessages(
             ].join('\n')
           );
           continue;
-        } else if (cleanBody === '6') {
+        } else if (cleanBody === '7') {
           await setReaction(sock, remoteJid, key, '⏳');
           try {
             const pbHealth = await playboxService.getHealth();
@@ -431,6 +437,60 @@ export async function handleMessages(
           } catch (err: any) {
             await setReaction(sock, remoteJid, key, '❌');
             await reply(`❌ Erro ao consultar relatório mensal: ${err.message}`);
+          }
+          continue;
+        }
+      }
+
+      // Submenu: ESTOQUE DE PELÚCIAS & ALERTAS
+      if (currentStage === 'estoque') {
+        const { formatEstoque } = await import('./commands/playboxFormatters.js');
+        if (cleanBody === '1') {
+          await setReaction(sock, remoteJid, key, '⏳');
+          await reply('⏳ Consultando estoque de todas as máquinas...');
+          try {
+            const est = await playboxService.getEstoque();
+            await setReaction(sock, remoteJid, key, '✅');
+            await reply(formatEstoque(est));
+          } catch (err: any) {
+            await setReaction(sock, remoteJid, key, '❌');
+            await reply(`❌ Erro ao consultar estoque: ${err.message}`);
+          }
+          continue;
+        } else if (cleanBody === '2') {
+          await setReaction(sock, remoteJid, key, '⏳');
+          await reply('⏳ Buscando máquinas com estoque baixo (< 30 un.)...');
+          try {
+            const est = await playboxService.getEstoque({ apenasEstoqueBaixo: true });
+            await setReaction(sock, remoteJid, key, '✅');
+            await reply(formatEstoque(est));
+          } catch (err: any) {
+            await setReaction(sock, remoteJid, key, '❌');
+            await reply(`❌ Erro ao consultar máquinas em alerta: ${err.message}`);
+          }
+          continue;
+        } else if (cleanBody === '3') {
+          await setReaction(sock, remoteJid, key, '⏳');
+          await reply('🚨 Verificando e disparando alerta de estoque no grupo...');
+          try {
+            const res = await playboxService.triggerAlertaEstoque();
+            await setReaction(sock, remoteJid, key, '✅');
+            await reply(`✅ Verificação concluída! ${res.maquinasNotificadas || 0} máquina(s) notificada(s) no grupo.`);
+          } catch (err: any) {
+            await setReaction(sock, remoteJid, key, '❌');
+            await reply(`❌ Erro ao disparar alerta de estoque: ${err.message}`);
+          }
+          continue;
+        } else if (cleanBody === '4') {
+          await setReaction(sock, remoteJid, key, '⏳');
+          await reply('🔄 Sincronizando estoque das controladoras VendProMax...');
+          try {
+            const res = await playboxService.sincronizarEstoqueVendProMax();
+            await setReaction(sock, remoteJid, key, '✅');
+            await reply(`✅ Sincronização concluída! ${res.totalAtualizadas || 0} máquina(s) atualizada(s).`);
+          } catch (err: any) {
+            await setReaction(sock, remoteJid, key, '❌');
+            await reply(`❌ Erro ao sincronizar com VendProMax: ${err.message}`);
           }
           continue;
         }

@@ -27,4 +27,5 @@ Thumbs.db
 
 # Cache npm temporário
 .npm-cache/
-data/
+data/*
+!data/ai_context.txt

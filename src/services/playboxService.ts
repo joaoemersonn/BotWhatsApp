@@ -101,6 +101,51 @@ export interface PlayBoxMaquina {
   estabelecimento?: PlayBoxEstabelecimento;
 }
 
+export interface PlayBoxEstoqueResumo {
+  totalMaquinas: number;
+  maquinasEmAlerta: number;
+  totalPeluciasEmEstoque: number;
+  mediaPeluciasPorMaquina: number;
+}
+
+export interface PlayBoxEstoqueMaquina {
+  maquinaId: number;
+  numeroPlanilha?: number | null;
+  nome: string;
+  integracao: string;
+  externalId?: string;
+  estabelecimentoId?: number | null;
+  estabelecimentoNome?: string | null;
+  cidade?: string | null;
+  estoqueAtual: number;
+  estoqueMinimoAlerta: number;
+  capacidadeMaxima: number;
+  estoqueBaixo: boolean;
+  percentualOcupacao: number;
+  ultimaEntrada?: string | null;
+  ultimaSaida?: string | null;
+}
+
+export interface PlayBoxEstoqueResponse {
+  resumo: PlayBoxEstoqueResumo;
+  maquinas: PlayBoxEstoqueMaquina[];
+}
+
+export interface PlayBoxMovimentacaoEstoque {
+  id: number;
+  maquinaId: number;
+  maquinaNome?: string;
+  tipo: string;
+  quantidade: number;
+  estoqueAnterior: number;
+  estoqueNovo: number;
+  origem: string;
+  observacao?: string;
+  responsavel?: string;
+  dataMovimentacao: string;
+  externalRef?: string;
+}
+
 /**
  * Métodos da API PlayBox
  */
@@ -116,6 +161,43 @@ export const playboxService = {
     const qs = new URLSearchParams(params).toString();
     return playboxFetch<any>(`/api/relatorios?${qs}`);
   },
+
+  // Estoque de Pelúcias
+  getEstoque: (params?: { estabelecimentoId?: number; cidade?: string; maquinaId?: number; apenasEstoqueBaixo?: boolean }) => {
+    const qs = new URLSearchParams();
+    if (params?.estabelecimentoId) qs.set('estabelecimentoId', String(params.estabelecimentoId));
+    if (params?.cidade) qs.set('cidade', params.cidade);
+    if (params?.maquinaId) qs.set('maquinaId', String(params.maquinaId));
+    if (params?.apenasEstoqueBaixo !== undefined) qs.set('apenasEstoqueBaixo', String(params.apenasEstoqueBaixo));
+    const query = qs.toString();
+    return playboxFetch<PlayBoxEstoqueResponse>(`/api/estoque${query ? `?${query}` : ''}`);
+  },
+  getEstoqueDetalhe: (maquinaId: number) =>
+    playboxFetch<{ maquina: PlayBoxEstoqueMaquina; movimentacoesRecentes: PlayBoxMovimentacaoEstoque[] }>(`/api/estoque/${maquinaId}`),
+  adicionarPelucias: (maquinaId: number, data: { quantidade: number; observacao?: string; responsavel?: string }) =>
+    playboxFetch<any>(`/api/estoque/${maquinaId}/adicionar`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  definirEstoque: (maquinaId: number, data: { novoEstoque: number; observacao?: string; responsavel?: string }) =>
+    playboxFetch<any>(`/api/estoque/${maquinaId}/definir`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  configurarLimitesEstoque: (maquinaId: number, data: { estoqueMinimoAlerta?: number; capacidadeMaxima?: number }) =>
+    playboxFetch<any>(`/api/estoque/${maquinaId}/limite-alerta`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  getHistoricoEstoque: (maquinaId: number, params?: { inicio?: string; fim?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.inicio) qs.set('inicio', params.inicio);
+    if (params?.fim) qs.set('fim', params.fim);
+    const query = qs.toString();
+    return playboxFetch<PlayBoxMovimentacaoEstoque[]>(`/api/estoque/${maquinaId}/historico${query ? `?${query}` : ''}`);
+  },
+  sincronizarEstoqueVendProMax: () =>
+    playboxFetch<any>('/api/estoque/sincronizar-vendpromax', { method: 'POST' }),
 
   // Aluguéis e Repasses
   getAlugueisVencendo: (dias: number = 7) =>
@@ -142,4 +224,6 @@ export const playboxService = {
     playboxFetch<any>('/api/trigger/import-transactions', { method: 'POST' }),
   syncMaquinas: () =>
     playboxFetch<any>('/api/maquinas/sync', { method: 'POST' }),
+  triggerAlertaEstoque: () =>
+    playboxFetch<any>('/api/trigger/alerta-estoque', { method: 'POST' }),
 };

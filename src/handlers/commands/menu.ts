@@ -4,6 +4,7 @@ export type SessionStage =
   | 'idle'
   | 'menu_principal'
   | 'relatorios'
+  | 'estoque'
   | 'alugueis'
   | 'estabelecimentos'
   | 'acoes'
@@ -46,13 +47,29 @@ export function buildMainMenuText(): string {
     'Olá, operador! Escolha uma das categorias abaixo:',
     '',
     '1️⃣ - 📊 *Relatórios de Faturamento*',
-    '2️⃣ - 💰 *Aluguéis & Repasses*',
-    '3️⃣ - 📍 *Estabelecimentos & Chaves PIX*',
-    '4️⃣ - ⚡ *Ações & Sincronizações*',
-    '5️⃣ - 🤖 *Assistente IA (Copiloto)*',
-    '6️⃣ - 🟢 *Status dos Serviços*',
+    '2️⃣ - 🧸 *Estoque de Pelúcias & Alertas*',
+    '3️⃣ - 💰 *Aluguéis & Repasses*',
+    '4️⃣ - 📍 *Estabelecimentos & Chaves PIX*',
+    '5️⃣ - ⚡ *Ações & Sincronizações*',
+    '6️⃣ - 🤖 *Assistente IA (Copiloto)*',
+    '7️⃣ - 🟢 *Status dos Serviços*',
     '',
     '💡 _Envie *0* a qualquer momento para voltar ao início._',
+  ].join('\n');
+}
+
+export function buildEstoqueMenuText(): string {
+  return [
+    '🧸 *ESTOQUE DE PELÚCIAS & ALERTAS*',
+    '',
+    'Escolha uma das consultas:',
+    '',
+    '1️⃣ - 📋 Visão Geral do Estoque (Todas as Máquinas)',
+    '2️⃣ - ⚠️ Máquinas em Alerta de Estoque Baixo (< 30 un.)',
+    '3️⃣ - 🚨 Disparar Alerta de Estoque nos Grupos',
+    '4️⃣ - 🔄 Sincronizar Estoque Nativo VendProMax',
+    '',
+    '↩️ _Envie *0* para voltar ao menu principal._',
   ].join('\n');
 }
 

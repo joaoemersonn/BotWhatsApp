@@ -1,4 +1,4 @@
-import { PlayBoxRelatorio, PlayBoxAluguel, PlayBoxEstabelecimento } from '../../services/playboxService.js';
+import { PlayBoxRelatorio, PlayBoxAluguel, PlayBoxEstabelecimento, PlayBoxEstoqueResponse } from '../../services/playboxService.js';
 
 export function formatCurrency(value: number = 0): string {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -85,5 +85,30 @@ export function formatEstabelecimentos(estabelecimentos: PlayBoxEstabelecimento[
   });
 
   lines.push('↩️ _Digite *0* para voltar ao menu principal._');
+  return lines.join('\n');
+}
+
+export function formatEstoque(estoque: PlayBoxEstoqueResponse): string {
+  const r = estoque.resumo;
+  const lines = [
+    '🧸 *ESTOQUE DE PELÚCIAS & BRINQUEDOS*',
+    '',
+    `• *Total de Máquinas:* ${r.totalMaquinas}`,
+    `• *Total de Pelúcias em Estoque:* ${r.totalPeluciasEmEstoque} un.`,
+    `• *Média por Máquina:* ${r.mediaPeluciasPorMaquina} un.`,
+    `• *Máquinas em Alerta (< 30 un.):* ${r.maquinasEmAlerta > 0 ? `⚠️ ${r.maquinasEmAlerta} máquina(s)` : '✅ Nenhuma'}`,
+    '',
+    '📋 *Situação por Máquina:*',
+  ];
+
+  estoque.maquinas.forEach((m) => {
+    const alerta = m.estoqueBaixo ? '⚠️ ALERTA' : '🟢 OK';
+    const loc = m.estabelecimentoNome ? `${m.estabelecimentoNome}${m.cidade ? ` (${m.cidade})` : ''}` : m.nome;
+    lines.push(
+      `• *${m.nome}* [ID ${m.maquinaId}] - ${loc}: *${m.estoqueAtual}/${m.capacidadeMaxima}* un. (${m.percentualOcupacao}%) - ${alerta}`
+    );
+  });
+
+  lines.push('', '↩️ _Digite *0* para voltar ao menu principal._');
   return lines.join('\n');
 }
