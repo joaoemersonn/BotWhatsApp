@@ -1,6 +1,7 @@
 import { Command } from '../types.js';
 import { pingCommand } from './ping.js';
 import { infoCommand } from './info.js';
+import { menuCommand } from './menu.js';
 import { config } from '../../config/env.js';
 
 export const commands = new Map<string, Command>();
@@ -8,7 +9,7 @@ export const commands = new Map<string, Command>();
 export const helpCommand: Command = {
   name: 'ajuda',
   description: 'Lista todos os comandos disponíveis',
-  aliases: ['help', 'menu', 'comandos'],
+  aliases: ['help', 'comandos'],
   execute: async ({ reply }) => {
     const list: string[] = [];
     const seen = new Set<string>();
@@ -48,3 +49,4 @@ function register(cmd: Command) {
 register(helpCommand);
 register(pingCommand);
 register(infoCommand);
+register(menuCommand);

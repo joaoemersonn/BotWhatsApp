@@ -5,6 +5,11 @@ services:
       dockerfile: Dockerfile
     container_name: whatsapp_bot
     restart: unless-stopped
+    networks:
+      whatsapp-net:
+        aliases:
+          - whatsapp-bot
+          - whatsapp_bot
     # Carrega variáveis de ambiente a partir do arquivo .env
     env_file:
       - .env
@@ -12,10 +17,11 @@ services:
       - NODE_ENV=production
     # Expõe a porta da API HTTP para envio ativo de mensagens e relatórios
     ports:
-      - "${PORT:-3000}:${PORT:-3000}"
-    # Mapeia o diretório de credenciais para que a sessão não seja perdida ao reiniciar o container
+      - "${PORT:-3035}:${PORT:-3035}"
+    # Mapeia o diretório de credenciais e de dados (whitelist) para persistência
     volumes:
       - ./auth_info_baileys:/app/auth_info_baileys
+      - ./data:/app/data
     # Habilita suporte a TTY para que o QR Code e logs sejam renderizados corretamente no terminal
     stdin_open: true
     tty: true
@@ -24,3 +30,8 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+networks:
+  whatsapp-net:
+    name: whatsapp-net
+    external: true

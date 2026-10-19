@@ -106,6 +106,38 @@ Se configurada a variável \`API_KEY\` no \`.env\`, passe o token através do he
           },
         },
       },
+      AddWhitelistContactRequest: {
+        type: 'object',
+        required: ['phone'],
+        properties: {
+          phone: {
+            type: 'string',
+            description: 'Número do operador com DDI e DDD (ex: 5511999998888)',
+            example: '5511999998888',
+          },
+          name: {
+            type: 'string',
+            description: 'Nome ou identificação do operador',
+            example: 'João Suporte / Gestor',
+          },
+        },
+      },
+      AddWhitelistGroupRequest: {
+        type: 'object',
+        required: ['groupId'],
+        properties: {
+          groupId: {
+            type: 'string',
+            description: 'ID do grupo da operação (ex: 120363028392819283@g.us)',
+            example: '120363028392819283@g.us',
+          },
+          name: {
+            type: 'string',
+            description: 'Nome de referência do grupo',
+            example: 'Operação Central',
+          },
+        },
+      },
     },
   },
   security: [
@@ -255,6 +287,97 @@ Se configurada a variável \`API_KEY\` no \`.env\`, passe o token através do he
         responses: {
           '200': {
             description: 'Resultado da verificação do número',
+          },
+        },
+      },
+    },
+    '/api/whitelist': {
+      get: {
+        summary: 'Listar todos os contatos e grupos autorizados na Whitelist',
+        tags: ['Gerenciamento da Operação (Whitelist)'],
+        responses: {
+          '200': {
+            description: 'Lista de contatos e grupos autorizados',
+          },
+        },
+      },
+    },
+    '/api/whitelist/contacts': {
+      post: {
+        summary: 'Cadastrar operador autorizado (Whitelist de Contatos)',
+        tags: ['Gerenciamento da Operação (Whitelist)'],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/AddWhitelistContactRequest' },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Contato cadastrado com sucesso',
+          },
+        },
+      },
+    },
+    '/api/whitelist/contacts/{phone}': {
+      delete: {
+        summary: 'Remover operador autorizado',
+        tags: ['Gerenciamento da Operação (Whitelist)'],
+        parameters: [
+          {
+            name: 'phone',
+            in: 'path',
+            required: true,
+            description: 'Número de telefone do operador',
+            schema: { type: 'string' },
+            example: '5511999998888',
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'Contato removido com sucesso',
+          },
+        },
+      },
+    },
+    '/api/whitelist/groups': {
+      post: {
+        summary: 'Cadastrar grupo da operação (Whitelist de Grupos)',
+        tags: ['Gerenciamento da Operação (Whitelist)'],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/AddWhitelistGroupRequest' },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Grupo cadastrado com sucesso',
+          },
+        },
+      },
+    },
+    '/api/whitelist/groups/{groupId}': {
+      delete: {
+        summary: 'Remover grupo da operação',
+        tags: ['Gerenciamento da Operação (Whitelist)'],
+        parameters: [
+          {
+            name: 'groupId',
+            in: 'path',
+            required: true,
+            description: 'ID do grupo',
+            schema: { type: 'string' },
+            example: '120363028392819283@g.us',
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'Grupo removido com sucesso',
           },
         },
       },

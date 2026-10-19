@@ -8,6 +8,13 @@ import {
   checkNumberStatus,
   getSocket,
 } from '../connection/whatsapp.js';
+import {
+  getWhitelist,
+  addAuthorizedContact,
+  removeAuthorizedContact,
+  addAuthorizedGroup,
+  removeAuthorizedGroup,
+} from '../services/whitelistService.js';
 import { config } from '../config/env.js';
 import { logger } from '../utils/logger.js';
 import { apiKeyAuth } from './auth.js';
@@ -43,7 +50,7 @@ apiRouter.get(['/status', '/health'], (_req: Request, res: Response) => {
  * POST /api/messages/send
  * Envio ativo de mensagem de texto
  */
-apiRouter.post(['/messages/send', '/send-message'], apiKeyAuth, async (req: Request, res: Response) => {
+apiRouter.post(['/messages/send', '/send-message'], async (req: Request, res: Response) => {
   try {
     const { to, message } = req.body;
 
@@ -91,7 +98,7 @@ apiRouter.post(['/messages/send', '/send-message'], apiKeyAuth, async (req: Requ
  * POST /api/messages/send-media
  * Envio de documentos, PDFs, imagens ou planilhas de relatórios
  */
-apiRouter.post('/messages/send-media', apiKeyAuth, async (req: Request, res: Response) => {
+apiRouter.post('/messages/send-media', async (req: Request, res: Response) => {
   try {
     const { to, mediaUrl, mediaBase64, mimetype, fileName, caption } = req.body;
 
@@ -146,7 +153,7 @@ apiRouter.post('/messages/send-media', apiKeyAuth, async (req: Request, res: Res
  * GET /api/groups
  * Lista todos os grupos dos quais o bot participa (com nomes e IDs)
  */
-apiRouter.get('/groups', apiKeyAuth, async (_req: Request, res: Response) => {
+apiRouter.get('/groups', async (_req: Request, res: Response) => {
   try {
     if (!isWhatsAppReady()) {
       res.status(503).json({
@@ -176,7 +183,7 @@ apiRouter.get('/groups', apiKeyAuth, async (_req: Request, res: Response) => {
  * GET /api/groups/:id
  * Consulta metadados e lista de participantes de um grupo específico
  */
-apiRouter.get('/groups/:id', apiKeyAuth, async (req: Request, res: Response) => {
+apiRouter.get('/groups/:id', async (req: Request, res: Response) => {
   try {
     if (!isWhatsAppReady()) {
       res.status(503).json({
@@ -211,7 +218,7 @@ apiRouter.get('/groups/:id', apiKeyAuth, async (req: Request, res: Response) => 
  * POST /api/contacts/check e GET /api/contacts/check/:phone
  * Verifica se um número de telefone está cadastrado no WhatsApp
  */
-apiRouter.post('/contacts/check', apiKeyAuth, async (req: Request, res: Response) => {
+apiRouter.post('/contacts/check', async (req: Request, res: Response) => {
   try {
     const { phone } = req.body;
     if (!phone || typeof phone !== 'string') {
@@ -241,7 +248,7 @@ apiRouter.post('/contacts/check', apiKeyAuth, async (req: Request, res: Response
   }
 });
 
-apiRouter.get('/contacts/check/:phone', apiKeyAuth, async (req: Request, res: Response) => {
+apiRouter.get('/contacts/check/:phone', async (req: Request, res: Response) => {
   try {
     if (!isWhatsAppReady()) {
       res.status(503).json({
@@ -265,5 +272,113 @@ apiRouter.get('/contacts/check/:phone', apiKeyAuth, async (req: Request, res: Re
       success: false,
       error: error.message || 'Erro ao verificar número no WhatsApp.',
     });
+  }
+});
+
+// =========================================================================
+// 🔒 ENDPOINTS DE WHITELIST (GERENCIAMENTO DA OPERAÇÃO)
+// =========================================================================
+
+/**
+ * GET /api/whitelist
+ * Retorna todos os contatos e grupos autorizados
+ */
+apiRouter.get('/whitelist', (_req: Request, res: Response) => {
+  const data = getWhitelist();
+  res.status(200).json({
+    success: true,
+    data,
+  });
+});
+
+/**
+ * POST /api/whitelist/contacts
+ * Cadastra um contato/operador autorizado
+ */
+apiRouter.post('/whitelist/contacts', (req: Request, res: Response) => {
+  try {
+    const { phone, name } = req.body;
+    if (!phone || typeof phone !== 'string') {
+      res.status(400).json({
+        success: false,
+        error: 'Informe o campo "phone" com DDI e DDD (ex: 5511999998888).',
+      });
+      return;
+    }
+
+    const contact = addAuthorizedContact(phone, name);
+    res.status(200).json({
+      success: true,
+      message: 'Contato adicionado à whitelist com sucesso.',
+      contact,
+    });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * DELETE /api/whitelist/contacts/:phone
+ * Remove um contato da whitelist
+ */
+apiRouter.delete('/whitelist/contacts/:phone', (req: Request, res: Response) => {
+  const rawPhone = req.params.phone;
+  const phone = Array.isArray(rawPhone) ? rawPhone[0] : rawPhone;
+  if (!phone) {
+    res.status(400).json({ success: false, error: 'Telefone inválido' });
+    return;
+  }
+
+  const removed = removeAuthorizedContact(phone);
+  if (removed) {
+    res.status(200).json({ success: true, message: 'Contato removido da whitelist.' });
+  } else {
+    res.status(404).json({ success: false, error: 'Contato não encontrado na whitelist.' });
+  }
+});
+
+/**
+ * POST /api/whitelist/groups
+ * Cadastra um grupo autorizado da operação
+ */
+apiRouter.post('/whitelist/groups', (req: Request, res: Response) => {
+  try {
+    const { groupId, name } = req.body;
+    if (!groupId || typeof groupId !== 'string') {
+      res.status(400).json({
+        success: false,
+        error: 'Informe o campo "groupId" (ex: 120363028392819283@g.us).',
+      });
+      return;
+    }
+
+    const group = addAuthorizedGroup(groupId, name);
+    res.status(200).json({
+      success: true,
+      message: 'Grupo adicionado à whitelist com sucesso.',
+      group,
+    });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * DELETE /api/whitelist/groups/:groupId
+ * Remove um grupo da whitelist
+ */
+apiRouter.delete('/whitelist/groups/:groupId', (req: Request, res: Response) => {
+  const rawGroupId = req.params.groupId;
+  const groupId = Array.isArray(rawGroupId) ? rawGroupId[0] : rawGroupId;
+  if (!groupId) {
+    res.status(400).json({ success: false, error: 'ID do grupo inválido' });
+    return;
+  }
+
+  const removed = removeAuthorizedGroup(groupId);
+  if (removed) {
+    res.status(200).json({ success: true, message: 'Grupo removido da whitelist.' });
+  } else {
+    res.status(404).json({ success: false, error: 'Grupo não encontrado na whitelist.' });
   }
 });

@@ -1,6 +1,14 @@
 import { proto, WAMessageKey } from '@whiskeysockets/baileys';
 import { CommandContext, WASocket } from './types.js';
 import { commands } from './commands/index.js';
+import {
+  getUserStage,
+  updateSessionStage,
+  buildMainMenuText,
+  buildReportsMenuText,
+  buildServicesMenuText,
+} from './commands/menu.js';
+import { isContactAuthorized, isGroupAuthorized } from '../services/whitelistService.js';
 import { config } from '../config/env.js';
 import { logger } from '../utils/logger.js';
 
@@ -21,9 +29,22 @@ function extractMessageText(message: proto.IMessage | null | undefined): string 
 }
 
 /**
+ * Extrai menções da mensagem (JIDs mencionados)
+ */
+function extractMentions(message: proto.IMessage | null | undefined): string[] {
+  if (!message) return [];
+  return (
+    message.extendedTextMessage?.contextInfo?.mentionedJid ||
+    message.imageMessage?.contextInfo?.mentionedJid ||
+    message.videoMessage?.contextInfo?.mentionedJid ||
+    []
+  );
+}
+
+/**
  * Simula digitação ("digitando...") para comportamento humanizado e anti-ban
  */
-async function simulateTyping(sock: WASocket, jid: string, durationMs = 1200): Promise<void> {
+async function simulateTyping(sock: WASocket, jid: string, durationMs = 1000): Promise<void> {
   try {
     await sock.sendPresenceUpdate('composing', jid);
     await new Promise((resolve) => setTimeout(resolve, durationMs));
@@ -40,8 +61,9 @@ export async function handleMessages(
   sock: WASocket,
   upsert: { messages: proto.IWebMessageInfo[]; type: string }
 ): Promise<void> {
-  // Processa apenas novas mensagens recebidas
   if (upsert.type !== 'notify') return;
+
+  const botJid = sock.user?.id?.split(':')[0] || '';
 
   for (const msg of upsert.messages) {
     try {
@@ -53,62 +75,167 @@ export async function handleMessages(
       // Ignora status broadcast
       if (remoteJid === 'status@broadcast') continue;
 
-      const isGroup = remoteJid.endsWith('@g.us');
-      if (config.ignoreGroups && isGroup) continue;
-
       // Ignora mensagens enviadas pelo próprio bot
       if (key.fromMe) continue;
 
-      // Marca como lida se configurado
-      if (config.autoReadMessages) {
-        await sock.readMessages([key as WAMessageKey]);
-      }
+      const isGroup = remoteJid.endsWith('@g.us');
+      const senderJid = isGroup ? key.participant || '' : remoteJid;
 
       const body = extractMessageText(msg.message);
       if (!body) continue;
 
+      // =========================================================================
+      // 🔒 CONTROLE DE ACESSO E WHITELIST SILENCIOSA
+      // =========================================================================
+
+      if (isGroup) {
+        // Se for grupo, verifica se o grupo está autorizado na whitelist
+        if (!isGroupAuthorized(remoteJid)) {
+          // Grupo não autorizado -> SILÊNCIO TOTAL
+          continue;
+        }
+
+        // Verifica se o remetente da mensagem no grupo é um operador autorizado
+        if (!isContactAuthorized(senderJid)) {
+          // Remetente não é operador -> SILÊNCIO TOTAL
+          continue;
+        }
+
+        // No grupo, só responde se o bot for explicitamente mencionado (@bot) ou usar prefixo
+        const mentions = extractMentions(msg.message);
+        const isMentioned = mentions.some((m) => m.startsWith(botJid));
+        const hasPrefix = body.startsWith(config.botPrefix) || body.startsWith('/');
+
+        if (!isMentioned && !hasPrefix) {
+          // Mensagem normal do grupo sem menção ao bot -> SILÊNCIO TOTAL
+          continue;
+        }
+      } else {
+        // Conversa privada (Direct Message)
+        // Se o contato NÃO estiver na lista de operadores autorizados -> SILÊNCIO TOTAL
+        // (Isso protege o número de suporte que é 100% manual)
+        if (!isContactAuthorized(remoteJid)) {
+          continue;
+        }
+      }
+
+      // Marca como lida apenas para operadores autorizados
+      if (config.autoReadMessages) {
+        await sock.readMessages([key as WAMessageKey]);
+      }
+
       logger.info(
-        { from: remoteJid, isGroup, text: body },
-        'Nova mensagem recebida'
+        { from: remoteJid, sender: senderJid, isGroup, text: body },
+        'Mensagem autorizada de operador recebida'
       );
 
-      // Roteamento de comandos
-      if (body.startsWith(config.botPrefix)) {
-        const withoutPrefix = body.slice(config.botPrefix.length).trim();
+      const reply = async (text: string, quoted: boolean = true) => {
+        await simulateTyping(sock, remoteJid);
+        return await sock.sendMessage(
+          remoteJid,
+          { text },
+          quoted ? { quoted: msg as any } : undefined
+        );
+      };
+
+      // Limpa possíveis menções (@5511...) do corpo do texto
+      let cleanBody = body.replace(/@\d+/g, '').trim();
+
+      // =========================================================================
+      // 🧭 MÁQUINA DE ESTADOS / NAVEGAÇÃO DE SUBMENUS
+      // =========================================================================
+      const currentStage = getUserStage(senderJid);
+
+      // Comando de cancelamento / retorno universal ("0" ou "voltar")
+      if (cleanBody === '0' || cleanBody.toLowerCase() === 'voltar') {
+        updateSessionStage(senderJid, 'idle');
+        await reply('↩️ Operação cancelada. Envie */menu* quando precisar novamente.');
+        continue;
+      }
+
+      // Se o usuário está navegando no menu principal
+      if (currentStage === 'menu_principal') {
+        if (cleanBody === '1') {
+          updateSessionStage(senderJid, 'relatorios');
+          await reply(buildReportsMenuText());
+          continue;
+        } else if (cleanBody === '2') {
+          await reply(buildServicesMenuText());
+          continue;
+        } else if (cleanBody === '3') {
+          await reply(
+            '👥 *Operadores e Grupos Autorizados:*\nConsulte ou gerencie a lista através do painel Swagger em */docs*.'
+          );
+          continue;
+        } else if (cleanBody === '4') {
+          const cmd = commands.get('info');
+          if (cmd) {
+            await cmd.execute({
+              sock,
+              message: msg,
+              senderJid,
+              fromMe: false,
+              isGroup,
+              args: [],
+              command: 'info',
+              body: cleanBody,
+              reply,
+            });
+          }
+          continue;
+        }
+      }
+
+      // Se o usuário está no submenu de relatórios
+      if (currentStage === 'relatorios') {
+        if (cleanBody === '1.1' || cleanBody === '1') {
+          await reply('📈 *Relatório do Dia:* Sistema em normalidade. Nenhuma pendência crítica.');
+          continue;
+        } else if (cleanBody === '1.2' || cleanBody === '2') {
+          await reply('📅 *Fechamento Semanal:* Todos os relatórios foram consolidados.');
+          continue;
+        } else if (cleanBody === '1.3' || cleanBody === '3') {
+          await reply('📉 *Alertas:* 0 incidentes abertos nas últimas 24 horas.');
+          continue;
+        }
+      }
+
+      // =========================================================================
+      // ⚡ ROTEAMENTO DE COMANDOS COM PREFIXO (! ou /)
+      // =========================================================================
+      const startsWithPrefix = cleanBody.startsWith(config.botPrefix) || cleanBody.startsWith('/');
+      const prefixUsed = cleanBody.startsWith('/') ? '/' : config.botPrefix;
+
+      if (startsWithPrefix || cleanBody.toLowerCase() === 'menu') {
+        const withoutPrefix = startsWithPrefix
+          ? cleanBody.slice(prefixUsed.length).trim()
+          : cleanBody.trim();
+
         const parts = withoutPrefix.split(/\s+/);
         const commandName = parts[0]?.toLowerCase() || '';
         const args = parts.slice(1);
 
         const command = commands.get(commandName);
 
-        const reply = async (text: string) => {
-          await simulateTyping(sock, remoteJid);
-          return await sock.sendMessage(
-            remoteJid,
-            { text },
-            { quoted: msg as any }
-          );
-        };
-
         if (command) {
           const context: CommandContext = {
             sock,
             message: msg,
-            senderJid: remoteJid,
+            senderJid,
             fromMe: key.fromMe ?? false,
             isGroup,
             args,
             command: commandName,
-            body,
+            body: cleanBody,
             reply,
           };
 
-          logger.info({ command: commandName, from: remoteJid }, 'Executando comando');
+          logger.info({ command: commandName, from: senderJid }, 'Executando comando de operador');
           await command.execute(context);
         } else {
-          await reply(
-            `❓ Comando não reconhecido. Envie *${config.botPrefix}ajuda* para ver a lista de comandos disponíveis.`
-          );
+          // Se não encontrou o comando, exibe o menu principal para o operador
+          updateSessionStage(senderJid, 'menu_principal');
+          await reply(buildMainMenuText());
         }
       }
     } catch (error) {
