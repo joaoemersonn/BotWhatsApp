@@ -263,7 +263,7 @@ export function isContactAuthorized(phoneOrJid: string): boolean {
 /**
  * Helper para comparar telefones considerando DDI e nono dígito do Brasil
  */
-function checkPhoneMatch(phoneA: string, phoneB: string): boolean {
+export function checkPhoneMatch(phoneA: string, phoneB: string): boolean {
   const aWithout55 = phoneA.startsWith('55') ? phoneA.slice(2) : phoneA;
   const bWithout55 = phoneB.startsWith('55') ? phoneB.slice(2) : phoneB;
 

@@ -10,8 +10,14 @@ import {
   buildEstabelecimentosMenuText,
   buildAcoesMenuText,
 } from './commands/menu.js';
-import { isContactAuthorized, isGroupAuthorized } from '../services/whitelistService.js';
-import { playboxService, PlayBoxRelatorio } from '../services/playboxService.js';
+import {
+  isContactAuthorized,
+  isGroupAuthorized,
+  checkPhoneMatch,
+  normalizePhone,
+  getPhoneForLid,
+} from '../services/whitelistService.js';
+import { playboxService } from '../services/playboxService.js';
 import { config } from '../config/env.js';
 import { logger } from '../utils/logger.js';
 
@@ -40,21 +46,85 @@ function extractMentions(message: proto.IMessage | null | undefined): string[] {
     message.extendedTextMessage?.contextInfo?.mentionedJid ||
     message.imageMessage?.contextInfo?.mentionedJid ||
     message.videoMessage?.contextInfo?.mentionedJid ||
+    message.documentMessage?.contextInfo?.mentionedJid ||
     []
   );
 }
 
 /**
- * Simula digitação ("digitando...") para comportamento humanizado e anti-ban
+ * Extrai as informações de contexto (mensagem citada/respondida)
  */
-async function simulateTyping(sock: WASocket, jid: string, durationMs = 1000): Promise<void> {
+function extractContextInfo(message: proto.IMessage | null | undefined): proto.IContextInfo | undefined {
+  if (!message) return undefined;
+  return (
+    message.extendedTextMessage?.contextInfo ||
+    message.imageMessage?.contextInfo ||
+    message.videoMessage?.contextInfo ||
+    message.documentMessage?.contextInfo ||
+    (message as any).buttonsResponseMessage?.contextInfo ||
+    (message as any).templateButtonReplyMessage?.contextInfo ||
+    undefined
+  );
+}
+
+/**
+ * Define uma reação com emoji em uma mensagem no WhatsApp
+ */
+async function setReaction(
+  sock: WASocket,
+  remoteJid: string,
+  key: proto.IMessageKey,
+  emoji: string
+): Promise<void> {
   try {
-    await sock.sendPresenceUpdate('composing', jid);
-    await new Promise((resolve) => setTimeout(resolve, durationMs));
-    await sock.sendPresenceUpdate('paused', jid);
+    await sock.sendMessage(remoteJid, {
+      react: {
+        text: emoji,
+        key: key as WAMessageKey,
+      },
+    });
   } catch (err) {
-    logger.debug({ err }, 'Falha ao enviar presence update');
+    logger.debug({ err, emoji, remoteJid }, 'Aviso: Falha ao enviar reação no WhatsApp');
   }
+}
+
+/**
+ * Atualiza o indicador de presença ("digitando..." / pausa)
+ */
+async function setTyping(sock: WASocket, remoteJid: string, isTyping: boolean): Promise<void> {
+  try {
+    await sock.sendPresenceUpdate(isTyping ? 'composing' : 'paused', remoteJid);
+  } catch (err) {
+    logger.debug({ err, isTyping, remoteJid }, 'Aviso: Falha ao atualizar presença');
+  }
+}
+
+/**
+ * Verifica se um JID ou número de telefone corresponde ao bot
+ */
+function isBotIdentity(
+  candidateJidOrPhone: string | null | undefined,
+  botPn: string,
+  botLid: string
+): boolean {
+  if (!candidateJidOrPhone) return false;
+
+  const rawClean = (candidateJidOrPhone.split('@')[0] || '').split(':')[0];
+  const clean = normalizePhone(rawClean);
+  const cleanBotPn = normalizePhone(botPn);
+  const cleanBotLid = normalizePhone(botLid);
+
+  if (cleanBotPn && clean === cleanBotPn) return true;
+  if (cleanBotLid && clean === cleanBotLid) return true;
+
+  if (cleanBotPn && checkPhoneMatch(clean, cleanBotPn)) return true;
+
+  if (candidateJidOrPhone.includes('@lid') || rawClean === botLid) {
+    const mapped = getPhoneForLid(rawClean);
+    if (mapped && (mapped === cleanBotPn || checkPhoneMatch(mapped, cleanBotPn))) return true;
+  }
+
+  return false;
 }
 
 /**
@@ -68,7 +138,8 @@ export async function handleMessages(
 
   if (upsert.type !== 'notify') return;
 
-  const botJid = sock.user?.id?.split(':')[0] || '';
+  const botPn = (sock.user?.id || '').split(':')[0];
+  const botLid = (sock.user?.lid || '').split(':')[0];
 
   for (const msg of upsert.messages) {
     try {
@@ -76,10 +147,6 @@ export async function handleMessages(
       if (!key || !key.remoteJid) continue;
 
       const remoteJid = key.remoteJid;
-      logger.info(
-        { remoteJid, fromMe: key.fromMe, participant: key.participant },
-        'Nova mensagem interceptada'
-      );
 
       // Ignora status broadcast
       if (remoteJid === 'status@broadcast') continue;
@@ -88,7 +155,7 @@ export async function handleMessages(
       if (key.fromMe) continue;
 
       const isGroup = remoteJid.endsWith('@g.us');
-      const senderJid = isGroup ? key.participant || '' : remoteJid;
+      const senderJid = isGroup ? key.participant || (msg as any).participant || '' : remoteJid;
 
       const body = extractMessageText(msg.message);
       if (!body) continue;
@@ -110,13 +177,19 @@ export async function handleMessages(
           continue;
         }
 
-        // No grupo, só responde se o bot for explicitamente mencionado (@bot) ou usar prefixo
+        // No grupo, verifica se o bot foi mencionado, citado ou se há prefixo
         const mentions = extractMentions(msg.message);
-        const isMentioned = mentions.some((m) => m.startsWith(botJid));
+        const isMentioned = mentions.some((m) => isBotIdentity(m, botPn, botLid));
+
+        const contextInfo = extractContextInfo(msg.message);
+        const quotedParticipant = contextInfo?.participant || '';
+        const isReplyingToBot = isBotIdentity(quotedParticipant, botPn, botLid);
+
+        const startsWithBotWord = /^(bot|playbox)[\s,:]+/i.test(body);
         const hasPrefix = body.startsWith(config.botPrefix) || body.startsWith('/');
 
-        if (!isMentioned && !hasPrefix) {
-          // Mensagem normal do grupo sem menção ao bot -> SILÊNCIO TOTAL
+        if (!isMentioned && !isReplyingToBot && !startsWithBotWord && !hasPrefix) {
+          // Mensagem normal do grupo sem menção/resposta ao bot -> SILÊNCIO TOTAL
           continue;
         }
       } else {
@@ -141,7 +214,6 @@ export async function handleMessages(
 
       const reply = async (text: string, quoted: boolean = true) => {
         try {
-          await simulateTyping(sock, remoteJid);
           const sent = await sock.sendMessage(
             remoteJid,
             { text },
@@ -163,6 +235,7 @@ export async function handleMessages(
       if (isGroup) {
         // Se no grupo alguém mandar explicitamente "/menu", abre o menu
         if (cleanBody === '/menu' || cleanBody === '!menu' || cleanBody.toLowerCase() === 'menu') {
+          await setReaction(sock, remoteJid, key, '📋');
           updateSessionStage(senderJid, 'menu_principal');
           await reply(buildMainMenuText());
           continue;
@@ -175,65 +248,116 @@ export async function handleMessages(
           const cmdName = cleanBody.slice(prefixUsed.length).trim().split(/\s+/)[0]?.toLowerCase();
           const cmd = commands.get(cmdName);
           if (cmd && cmdName !== 'ia' && cmdName !== 'ai') {
+            await setReaction(sock, remoteJid, key, '⏳');
             const args = cleanBody.slice(prefixUsed.length).trim().split(/\s+/).slice(1);
-            await cmd.execute({
-              sock,
-              message: msg,
-              senderJid,
-              fromMe: key.fromMe ?? false,
-              isGroup: true,
-              args,
-              command: cmdName,
-              body: cleanBody,
-              reply,
-            });
+            try {
+              await cmd.execute({
+                sock,
+                message: msg,
+                senderJid,
+                fromMe: key.fromMe ?? false,
+                isGroup: true,
+                args,
+                command: cmdName,
+                body: cleanBody,
+                reply,
+              });
+              await setReaction(sock, remoteJid, key, '✅');
+            } catch (cmdErr: any) {
+              logger.error({ err: cmdErr, cmdName }, 'Erro ao executar comando no grupo');
+              await setReaction(sock, remoteJid, key, '❌');
+              await reply(`❌ *Erro ao executar comando /${cmdName}:* ${cmdErr.message}`);
+            }
             continue;
           }
         }
 
-        // Em todos os outros casos no grupo (menção @bot ou pergunta direta): CHAMA A IA DIRETO
-        // Remove comando "/ia" se tiver sido escrito
-        const promptText = cleanBody.replace(/^\/(ia|ai)\s*/i, '').replace(/^!(ia|ai)\s*/i, '').trim();
-        if (promptText) {
+        // Em todos os outros casos no grupo (menção @bot, quote, ou pergunta direta): CHAMA A IA DIRETO
+        const promptText = cleanBody
+          .replace(/^(bot|playbox)[\s,:]+/i, '')
+          .replace(/^\/(ia|ai)\s*/i, '')
+          .replace(/^!(ia|ai)\s*/i, '')
+          .trim();
+
+        if (!promptText) {
+          await setReaction(sock, remoteJid, key, '✅');
+          await reply(
+            'Olá! 👋 Sou o assistente inteligente da PlayBox. Como posso ajudar você hoje?\n\n' +
+            '💡 _Pode me perguntar sobre relatórios, faturamento das máquinas, aluguéis a vencer ou ações operacionais._'
+          );
+          continue;
+        }
+
+        // Feedback imediato de "pensando": reação ⏳ e presença digitando
+        await setReaction(sock, remoteJid, key, '⏳');
+        await setTyping(sock, remoteJid, true);
+
+        try {
           const { askGemini } = await import('../services/aiService.js');
           const answer = await askGemini(senderJid, promptText);
+
+          if (answer.startsWith('❌') || answer.startsWith('⚠️')) {
+            await setReaction(sock, remoteJid, key, answer.startsWith('⚠️') ? '⚠️' : '❌');
+          } else {
+            await setReaction(sock, remoteJid, key, '✅');
+          }
           await reply(answer);
+        } catch (err: any) {
+          logger.error({ err, senderJid }, 'Erro ao consultar IA no grupo');
+          await setReaction(sock, remoteJid, key, '❌');
+          await reply(`❌ *Erro no processamento da solicitação:* ${err.message || 'Falha inesperada.'}`);
+        } finally {
+          await setTyping(sock, remoteJid, false);
         }
         continue;
       }
 
       // =========================================================================
-      // 🧭 MÁQUINA DE ESTADOS / NAVEGAÇÃO DE SUBMENUS (PRIVADO)
+      // 💬 COMPORTAMENTO EM CHAT PRIVADO (DM COM OPERADOR AUTORIZADO)
       // =========================================================================
       const currentStage = getUserStage(senderJid);
 
       // Comando de cancelamento / retorno universal ("0" ou "voltar")
       if (cleanBody === '0' || cleanBody.toLowerCase() === 'voltar') {
         updateSessionStage(senderJid, 'idle');
-        await reply('↩️ Operação cancelada. Envie */menu* quando precisar novamente.');
+        await setReaction(sock, remoteJid, key, '↩️');
+        await reply('↩️ Operação cancelada. Envie */menu* quando precisar navegar pelos menus ou converse diretamente comigo!');
         continue;
       }
 
-      // Se o usuário está navegando no menu principal
+      // Se enviou comando de menu
+      if (cleanBody === '/menu' || cleanBody === '!menu' || cleanBody.toLowerCase() === 'menu') {
+        updateSessionStage(senderJid, 'menu_principal');
+        await setReaction(sock, remoteJid, key, '📋');
+        await reply(buildMainMenuText());
+        continue;
+      }
+
+      // Se o operador está navegando no menu principal
       if (currentStage === 'menu_principal') {
         if (cleanBody === '1') {
           updateSessionStage(senderJid, 'relatorios');
+          await setReaction(sock, remoteJid, key, '✅');
           await reply(buildReportsMenuText());
           continue;
         } else if (cleanBody === '2') {
           updateSessionStage(senderJid, 'alugueis');
+          await setReaction(sock, remoteJid, key, '✅');
           await reply(buildAlugueisMenuText());
           continue;
         } else if (cleanBody === '3') {
           updateSessionStage(senderJid, 'estabelecimentos');
+          await setReaction(sock, remoteJid, key, '✅');
           await reply(buildEstabelecimentosMenuText());
           continue;
         } else if (cleanBody === '4') {
           updateSessionStage(senderJid, 'acoes');
+          await setReaction(sock, remoteJid, key, '✅');
           await reply(buildAcoesMenuText());
           continue;
         } else if (cleanBody === '5') {
           updateSessionStage(senderJid, 'ai_chat');
+          await setReaction(sock, remoteJid, key, '🤖');
           await reply(
             [
               '🤖 *MODO ASSISTENTE IA ATIVADO*',
@@ -246,8 +370,10 @@ export async function handleMessages(
           );
           continue;
         } else if (cleanBody === '6') {
+          await setReaction(sock, remoteJid, key, '⏳');
           try {
             const pbHealth = await playboxService.getHealth();
+            await setReaction(sock, remoteJid, key, '✅');
             await reply(
               [
                 '🟢 *STATUS DOS SERVIÇOS*',
@@ -261,47 +387,49 @@ export async function handleMessages(
               ].join('\n')
             );
           } catch {
+            await setReaction(sock, remoteJid, key, '⚠️');
             await reply('⚠️ *WhatsApp Bot:* Online | *PlayBox Scheduler:* Não respondeu.');
           }
           continue;
         }
       }
 
-      // Se o usuário está em conversação direta com a IA
-      if (currentStage === 'ai_chat') {
-        const { askGemini } = await import('../services/aiService.js');
-        const answer = await askGemini(senderJid, cleanBody);
-        await reply(answer);
-        continue;
-      }
-
       // Submenu 1: RELATÓRIOS
       if (currentStage === 'relatorios') {
         const { formatRelatorio } = await import('./commands/playboxFormatters.js');
         if (cleanBody === '1') {
+          await setReaction(sock, remoteJid, key, '⏳');
           await reply('⏳ Consultando relatório das últimas 12h...');
           try {
             const rel = await playboxService.getRelatorio12h();
+            await setReaction(sock, remoteJid, key, '✅');
             await reply(formatRelatorio(rel));
           } catch (err: any) {
+            await setReaction(sock, remoteJid, key, '❌');
             await reply(`❌ Erro ao consultar relatório 12h: ${err.message}`);
           }
           continue;
         } else if (cleanBody === '2') {
+          await setReaction(sock, remoteJid, key, '⏳');
           await reply('⏳ Consultando relatório das últimas 24h...');
           try {
             const rel = await playboxService.getRelatorio24h();
+            await setReaction(sock, remoteJid, key, '✅');
             await reply(formatRelatorio(rel));
           } catch (err: any) {
+            await setReaction(sock, remoteJid, key, '❌');
             await reply(`❌ Erro ao consultar relatório 24h: ${err.message}`);
           }
           continue;
         } else if (cleanBody === '3') {
+          await setReaction(sock, remoteJid, key, '⏳');
           await reply('⏳ Consultando acumulado do mês...');
           try {
             const rel = await playboxService.getRelatorioMes();
+            await setReaction(sock, remoteJid, key, '✅');
             await reply(formatRelatorio(rel));
           } catch (err: any) {
+            await setReaction(sock, remoteJid, key, '❌');
             await reply(`❌ Erro ao consultar relatório mensal: ${err.message}`);
           }
           continue;
@@ -312,29 +440,38 @@ export async function handleMessages(
       if (currentStage === 'alugueis') {
         const { formatAlugueis } = await import('./commands/playboxFormatters.js');
         if (cleanBody === '1') {
+          await setReaction(sock, remoteJid, key, '⏳');
           await reply('⏳ Buscando aluguéis vencendo nos próximos 7 dias...');
           try {
             const al = await playboxService.getAlugueisVencendo(7);
+            await setReaction(sock, remoteJid, key, '✅');
             await reply(formatAlugueis(al, 'Aluguéis Vencendo (Próximos 7 Dias)'));
           } catch (err: any) {
+            await setReaction(sock, remoteJid, key, '❌');
             await reply(`❌ Erro ao buscar vencimentos: ${err.message}`);
           }
           continue;
         } else if (cleanBody === '2') {
+          await setReaction(sock, remoteJid, key, '⏳');
           await reply('⏳ Buscando pagamentos pendentes...');
           try {
             const al = await playboxService.getAlugueisPendentes();
+            await setReaction(sock, remoteJid, key, '✅');
             await reply(formatAlugueis(al, 'Aluguéis com Pagamento Pendente'));
           } catch (err: any) {
+            await setReaction(sock, remoteJid, key, '❌');
             await reply(`❌ Erro ao buscar pendentes: ${err.message}`);
           }
           continue;
         } else if (cleanBody === '3') {
+          await setReaction(sock, remoteJid, key, '⏳');
           await reply('⏳ Buscando pagamentos efetuados...');
           try {
             const al = await playboxService.getAlugueisPagos();
+            await setReaction(sock, remoteJid, key, '✅');
             await reply(formatAlugueis(al, 'Aluguéis Já Pagos'));
           } catch (err: any) {
+            await setReaction(sock, remoteJid, key, '❌');
             await reply(`❌ Erro ao buscar pagos: ${err.message}`);
           }
           continue;
@@ -345,103 +482,147 @@ export async function handleMessages(
       if (currentStage === 'estabelecimentos') {
         const { formatEstabelecimentos } = await import('./commands/playboxFormatters.js');
         if (cleanBody === '1') {
+          await setReaction(sock, remoteJid, key, '⏳');
           await reply('⏳ Carregando lista de estabelecimentos...');
           try {
             const ests = await playboxService.getEstabelecimentos();
+            await setReaction(sock, remoteJid, key, '✅');
             await reply(formatEstabelecimentos(ests));
           } catch (err: any) {
+            await setReaction(sock, remoteJid, key, '❌');
             await reply(`❌ Erro ao listar estabelecimentos: ${err.message}`);
           }
           continue;
         } else if (cleanBody === '2') {
+          await setReaction(sock, remoteJid, key, '🔑');
           await reply(
-            '🔑 *Consulta de PIX:*\nDigite o ID ou parte do nome do estabelecimento (ou envie *0* para voltar).'
+            '🔑 *Consulta de PIX:*\nDigite o nome ou ID do estabelecimento que deseja consultar, ou converse diretamente com a IA!'
           );
           continue;
         }
       }
 
-      // Submenu 4: AÇÕES & DISPAROS
+      // Submenu 4: AÇÕES OPERACIONAIS
       if (currentStage === 'acoes') {
         if (cleanBody === '1') {
-          await reply('🚀 Disparando envio do relatório de faturamento nos grupos...');
+          await setReaction(sock, remoteJid, key, '⏳');
+          await reply('🚀 Disparando envio do relatório nos grupos configurados...');
           try {
             await playboxService.triggerReport();
-            await reply('✅ Relatório enviado com sucesso!');
+            await setReaction(sock, remoteJid, key, '✅');
+            await reply('✅ Relatório disparado com sucesso no PlayBox!');
           } catch (err: any) {
+            await setReaction(sock, remoteJid, key, '❌');
             await reply(`❌ Erro ao disparar relatório: ${err.message}`);
           }
           continue;
         } else if (cleanBody === '2') {
+          await setReaction(sock, remoteJid, key, '⏳');
           await reply('🔍 Iniciando verificação de máquinas offline...');
           try {
             await playboxService.triggerMonitor();
+            await setReaction(sock, remoteJid, key, '✅');
             await reply('✅ Monitoramento concluído com sucesso!');
           } catch (err: any) {
+            await setReaction(sock, remoteJid, key, '❌');
             await reply(`❌ Erro no monitoramento: ${err.message}`);
           }
           continue;
         } else if (cleanBody === '3') {
+          await setReaction(sock, remoteJid, key, '⏳');
           await reply('🔄 Disparando sincronização de transações das integradoras...');
           try {
             await playboxService.triggerImportTransactions();
+            await setReaction(sock, remoteJid, key, '✅');
             await reply('✅ Sincronização de transações iniciada!');
           } catch (err: any) {
+            await setReaction(sock, remoteJid, key, '❌');
             await reply(`❌ Erro ao sincronizar transações: ${err.message}`);
           }
           continue;
         } else if (cleanBody === '4') {
+          await setReaction(sock, remoteJid, key, '⏳');
           await reply('🕹️ Descobrindo novas máquinas nas integradoras...');
           try {
             await playboxService.syncMaquinas();
+            await setReaction(sock, remoteJid, key, '✅');
             await reply('✅ Sincronização de máquinas finalizada!');
           } catch (err: any) {
+            await setReaction(sock, remoteJid, key, '❌');
             await reply(`❌ Erro ao sincronizar máquinas: ${err.message}`);
           }
           continue;
         }
       }
 
-      // =========================================================================
-      // ⚡ ROTEAMENTO DE COMANDOS COM PREFIXO (! ou /)
-      // =========================================================================
+      // Se for comando explícito com prefixo (! ou /)
       const startsWithPrefix = cleanBody.startsWith(config.botPrefix) || cleanBody.startsWith('/');
       const prefixUsed = cleanBody.startsWith('/') ? '/' : config.botPrefix;
 
-      if (startsWithPrefix || cleanBody.toLowerCase() === 'menu') {
-        const withoutPrefix = startsWithPrefix
-          ? cleanBody.slice(prefixUsed.length).trim()
-          : cleanBody.trim();
-
+      if (startsWithPrefix) {
+        const withoutPrefix = cleanBody.slice(prefixUsed.length).trim();
         const parts = withoutPrefix.split(/\s+/);
         const commandName = parts[0]?.toLowerCase() || '';
         const args = parts.slice(1);
 
         const command = commands.get(commandName);
 
-        if (command) {
+        if (command && commandName !== 'ia' && commandName !== 'ai') {
+          await setReaction(sock, remoteJid, key, '⏳');
           const context: CommandContext = {
             sock,
             message: msg,
             senderJid,
             fromMe: key.fromMe ?? false,
-            isGroup,
+            isGroup: false,
             args,
             command: commandName,
             body: cleanBody,
             reply,
           };
 
-          logger.info({ command: commandName, from: senderJid }, 'Executando comando de operador');
-          await command.execute(context);
-        } else {
-          // Se não encontrou o comando, exibe o menu principal para o operador
-          updateSessionStage(senderJid, 'menu_principal');
-          await reply(buildMainMenuText());
+          try {
+            logger.info({ command: commandName, from: senderJid }, 'Executando comando de operador');
+            await command.execute(context);
+            await setReaction(sock, remoteJid, key, '✅');
+          } catch (cmdErr: any) {
+            logger.error({ err: cmdErr, command: commandName }, 'Erro ao executar comando');
+            await setReaction(sock, remoteJid, key, '❌');
+            await reply(`❌ *Erro ao executar comando /${commandName}:* ${cmdErr.message}`);
+          }
+          continue;
         }
       }
-    } catch (error) {
-      logger.error({ error, msgId: msg.key?.id }, 'Erro ao processar mensagem');
+
+      // =========================================================================
+      // 🤖 DEFAULT NO PRIVADO: CHAT DIRETO COM A IA
+      // Qualquer mensagem enviada pelo operador é atendida pela IA
+      // =========================================================================
+      const promptText = cleanBody.replace(/^\/(ia|ai)\s*/i, '').replace(/^!(ia|ai)\s*/i, '').trim() || cleanBody;
+
+      // Feedback imediato de "pensando": reação ⏳ e presença digitando
+      await setReaction(sock, remoteJid, key, '⏳');
+      await setTyping(sock, remoteJid, true);
+
+      try {
+        const { askGemini } = await import('../services/aiService.js');
+        const answer = await askGemini(senderJid, promptText);
+
+        if (answer.startsWith('❌') || answer.startsWith('⚠️')) {
+          await setReaction(sock, remoteJid, key, answer.startsWith('⚠️') ? '⚠️' : '❌');
+        } else {
+          await setReaction(sock, remoteJid, key, '✅');
+        }
+        await reply(answer);
+      } catch (err: any) {
+        logger.error({ err, senderJid }, 'Erro ao processar mensagem privada com IA');
+        await setReaction(sock, remoteJid, key, '❌');
+        await reply(`❌ *Erro no processamento da IA:* ${err.message || 'Falha inesperada.'}`);
+      } finally {
+        await setTyping(sock, remoteJid, false);
+      }
+    } catch (error: any) {
+      logger.error({ error, msgId: msg.key?.id }, 'Erro inesperado ao processar mensagem');
     }
   }
 }

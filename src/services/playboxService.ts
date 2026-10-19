@@ -112,6 +112,10 @@ export const playboxService = {
   getRelatorio12h: () => playboxFetch<PlayBoxRelatorio>('/api/relatorios/12h'),
   getRelatorio24h: () => playboxFetch<PlayBoxRelatorio>('/api/relatorios/24h'),
   getRelatorioMes: () => playboxFetch<PlayBoxRelatorio>('/api/relatorios/mes'),
+  getRelatorioCustom: (params: Record<string, string>) => {
+    const qs = new URLSearchParams(params).toString();
+    return playboxFetch<any>(`/api/relatorios?${qs}`);
+  },
 
   // Aluguéis e Repasses
   getAlugueisVencendo: (dias: number = 7) =>

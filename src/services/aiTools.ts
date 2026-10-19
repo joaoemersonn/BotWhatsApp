@@ -146,18 +146,15 @@ export async function executePlayboxTool(name: string, args: Record<string, any>
         }
 
         // Customizado via API /api/relatorios
-        const params = new URLSearchParams();
-        if (periodo) params.set('periodo', periodo);
-        if (dataInicio) params.set('dataInicio', dataInicio);
-        if (dataFim) params.set('dataFim', dataFim);
-        if (cidade) params.set('cidade', cidade);
-        if (estabelecimentoId) params.set('estabelecimentoId', String(estabelecimentoId));
-        if (maquinaId) params.set('maquinaId', String(maquinaId));
+        const params: Record<string, string> = {};
+        if (periodo) params.periodo = periodo;
+        if (dataInicio) params.dataInicio = dataInicio;
+        if (dataFim) params.dataFim = dataFim;
+        if (cidade) params.cidade = cidade;
+        if (estabelecimentoId) params.estabelecimentoId = String(estabelecimentoId);
+        if (maquinaId) params.maquinaId = String(maquinaId);
 
-        const res = await fetch(`http://playbox-scheduler:8080/api/relatorios?${params.toString()}`, {
-          headers: { 'X-API-KEY': 'undefined' },
-        });
-        return await res.json();
+        return await playboxService.getRelatorioCustom(params);
       }
 
       case 'consultarAlugueisERepasses': {

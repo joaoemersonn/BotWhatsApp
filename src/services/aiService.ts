@@ -88,7 +88,13 @@ export async function askGemini(userId: string, prompt: string): Promise<string>
   }
 
   // Lista de modelos suportados com fallback automático
-  const models = ['gemini-3.6-flash', 'gemini-3.5-flash'];
+  const models = [
+    'gemini-3.6-flash',
+    'gemini-3.5-flash-lite',
+    'gemini-3.1-flash-lite',
+    'gemini-3-flash-preview',
+    'gemini-3.8-flash',
+  ];
 
   try {
     // Loop de resolução de Function Calling (máximo 4 iterações consecutivas de chamadas)
@@ -107,6 +113,7 @@ export async function askGemini(userId: string, prompt: string): Promise<string>
 
       let response: Response | null = null;
       let lastErrorText = '';
+      let lastStatus = 0;
 
       for (const model of models) {
         const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
@@ -120,14 +127,27 @@ export async function askGemini(userId: string, prompt: string): Promise<string>
           response = res;
           break;
         } else {
+          lastStatus = res.status;
           lastErrorText = await res.text();
           logger.warn({ model, status: res.status, lastErrorText }, 'Falha no modelo, tentando fallback...');
         }
       }
 
       if (!response) {
-        logger.error({ lastErrorText }, 'Todos os modelos de IA falharam');
-        return '❌ Desculpe, não consegui processar sua solicitação no momento. Tente novamente em instantes.';
+        logger.error({ lastErrorText, lastStatus }, 'Todos os modelos de IA falharam');
+        let parsedMessage = '';
+        try {
+          const errObj = JSON.parse(lastErrorText);
+          parsedMessage = errObj?.error?.message || '';
+        } catch {}
+
+        if (lastStatus === 429) {
+          return '⚠️ *Limite de requisições da IA atingido (Quota 429).* Por favor, aguarde alguns instantes antes de tentar novamente.';
+        }
+        if (lastStatus === 503) {
+          return '⚠️ *Serviço da IA temporariamente indisponível (503).* Os servidores da Google estão com alta demanda no momento. Tente novamente em instantes.';
+        }
+        return `❌ *Erro ao consultar a IA (${lastStatus || 'Falha'}):* ${parsedMessage || lastErrorText || 'Não foi possível processar no momento.'}`;
       }
 
       const data: any = await response.json();
