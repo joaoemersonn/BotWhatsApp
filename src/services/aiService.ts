@@ -87,7 +87,8 @@ export async function askGemini(userId: string, prompt: string): Promise<string>
     history.splice(0, history.length - 25);
   }
 
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+  // Lista de modelos suportados com fallback automático
+  const models = ['gemini-3.6-flash', 'gemini-3.5-flash'];
 
   try {
     // Loop de resolução de Function Calling (máximo 4 iterações consecutivas de chamadas)
@@ -104,16 +105,29 @@ export async function askGemini(userId: string, prompt: string): Promise<string>
         },
       };
 
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody),
-      });
+      let response: Response | null = null;
+      let lastErrorText = '';
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        logger.error({ status: response.status, errorText }, 'Erro na resposta do Gemini');
-        return '❌ Desculpe, não consegui processar sua solicitação no momento.';
+      for (const model of models) {
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody),
+        });
+
+        if (res.ok) {
+          response = res;
+          break;
+        } else {
+          lastErrorText = await res.text();
+          logger.warn({ model, status: res.status, lastErrorText }, 'Falha no modelo, tentando fallback...');
+        }
+      }
+
+      if (!response) {
+        logger.error({ lastErrorText }, 'Todos os modelos de IA falharam');
+        return '❌ Desculpe, não consegui processar sua solicitação no momento. Tente novamente em instantes.';
       }
 
       const data: any = await response.json();
