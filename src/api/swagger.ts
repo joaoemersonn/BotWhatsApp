@@ -1,12 +1,13 @@
 import swaggerUi from 'swagger-ui-express';
 import { Router } from 'express';
 import { config } from '../config/env.js';
+import { APP_VERSION } from '../config/version.js';
 
 export const swaggerSpec = {
   openapi: '3.0.0',
   info: {
-    title: '🤖 WhatsApp Bot',
-    version: '1.0.0',
+    title: `🤖 WhatsApp Bot (v${APP_VERSION})`,
+    version: APP_VERSION,
     description: `API HTTP para disparo ativo de mensagens, envio de relatórios e consulta de grupos e contatos via WhatsApp Web (Baileys).
 
 ### 🔑 Autenticação

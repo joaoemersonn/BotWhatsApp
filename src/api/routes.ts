@@ -19,6 +19,8 @@ import { config } from '../config/env.js';
 import { logger } from '../utils/logger.js';
 import { apiKeyAuth } from './auth.js';
 
+import { APP_VERSION } from '../config/version.js';
+
 export const apiRouter = Router();
 
 // Aplica autenticação por API_KEY em 100% das rotas da API
@@ -38,6 +40,7 @@ apiRouter.get(['/status', '/health'], (_req: Request, res: Response) => {
   res.status(ready ? 200 : 503).json({
     status: ready ? 'online' : 'connecting_or_offline',
     connected: ready,
+    version: APP_VERSION,
     botName: config.botName,
     environment: config.nodeEnv,
     userJid: sock?.user?.id || null,
