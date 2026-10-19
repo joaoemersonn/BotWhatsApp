@@ -160,7 +160,9 @@ export function removeAuthorizedGroup(groupId: string): boolean {
  * Verifica se um número de telefone é um operador autorizado
  */
 export function isContactAuthorized(phoneOrJid: string): boolean {
-  const clean = normalizePhone(phoneOrJid.split('@')[0]);
+  // Baileys pode entregar JIDs com sufixo de dispositivo, ex: 558781362724:12@s.whatsapp.net
+  const userPart = (phoneOrJid.split('@')[0] || '').split(':')[0];
+  const clean = normalizePhone(userPart);
   const data = getWhitelist();
 
   // Verifica tanto o número exato quanto variações comuns de 9 dígitos (ex: Brasil)

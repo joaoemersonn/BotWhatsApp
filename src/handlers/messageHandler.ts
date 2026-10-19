@@ -115,6 +115,7 @@ export async function handleMessages(
         // Se o contato NÃO estiver na lista de operadores autorizados -> SILÊNCIO TOTAL
         // (Isso protege o número de suporte que é 100% manual)
         if (!isContactAuthorized(remoteJid)) {
+          logger.info({ remoteJid, body }, 'Mensagem privada de número NÃO autorizado recebida (ignorada)');
           continue;
         }
       }
