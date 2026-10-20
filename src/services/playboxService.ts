@@ -161,6 +161,33 @@ export const playboxService = {
     const qs = new URLSearchParams(params).toString();
     return playboxFetch<any>(`/api/relatorios?${qs}`);
   },
+  getRelatorioPdf: async (params: Record<string, string | number | boolean | undefined> = {}): Promise<Buffer> => {
+    const qs = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined && value !== null && value !== '') {
+        qs.set(key, String(value));
+      }
+    }
+    const query = qs.toString();
+    const endpoint = `/api/relatorios/pdf${query ? `?${query}` : ''}`;
+    const url = `${config.playboxBaseUrl}${endpoint}`;
+    const headers = {
+      ...(config.playboxApiKey ? { 'X-API-KEY': config.playboxApiKey } : {}),
+    };
+
+    try {
+      const res = await fetch(url, { headers });
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Erro na API PlayBox ao gerar PDF (${res.status}): ${errText}`);
+      }
+      const arrayBuffer = await res.arrayBuffer();
+      return Buffer.from(arrayBuffer);
+    } catch (error: any) {
+      logger.error({ err: error, endpoint }, 'Falha ao buscar PDF do PlayBox');
+      throw error;
+    }
+  },
 
   // Estoque de Pelúcias
   getEstoque: (params?: { estabelecimentoId?: number; cidade?: string; maquinaId?: number; apenasEstoqueBaixo?: boolean }) => {

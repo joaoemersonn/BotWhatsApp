@@ -256,6 +256,7 @@ export async function handleMessages(
                 sock,
                 message: msg,
                 senderJid,
+                remoteJid,
                 fromMe: key.fromMe ?? false,
                 isGroup: true,
                 args,
@@ -295,7 +296,7 @@ export async function handleMessages(
 
         try {
           const { askGemini } = await import('../services/aiService.js');
-          const answer = await askGemini(senderJid, promptText);
+          const answer = await askGemini(senderJid, promptText, { sock, remoteJid, msg });
 
           if (answer.startsWith('❌') || answer.startsWith('⚠️')) {
             await setReaction(sock, remoteJid, key, answer.startsWith('⚠️') ? '⚠️' : '❌');
@@ -437,6 +438,28 @@ export async function handleMessages(
           } catch (err: any) {
             await setReaction(sock, remoteJid, key, '❌');
             await reply(`❌ Erro ao consultar relatório mensal: ${err.message}`);
+          }
+          continue;
+        } else if (cleanBody === '4') {
+          await setReaction(sock, remoteJid, key, '⏳');
+          await reply('📄 *Gerando Relatório de Operações em PDF...* Por favor, aguarde alguns instantes.');
+          try {
+            const pdfBuffer = await playboxService.getRelatorioPdf({ periodo: 'mes', incluirHistorico: true });
+            const filename = `relatorio-operacoes-playbox-${new Date().toISOString().slice(0, 10)}.pdf`;
+            await sock.sendMessage(
+              remoteJid,
+              {
+                document: pdfBuffer,
+                mimetype: 'application/pdf',
+                fileName: filename,
+                caption: '📄 *Relatório Mensal de Operações PlayBox (PDF)*',
+              },
+              { quoted: msg as any }
+            );
+            await setReaction(sock, remoteJid, key, '✅');
+          } catch (err: any) {
+            await setReaction(sock, remoteJid, key, '❌');
+            await reply(`❌ Erro ao gerar PDF: ${err.message}`);
           }
           continue;
         }
@@ -633,6 +656,7 @@ export async function handleMessages(
             sock,
             message: msg,
             senderJid,
+            remoteJid,
             fromMe: key.fromMe ?? false,
             isGroup: false,
             args,
@@ -666,7 +690,7 @@ export async function handleMessages(
 
       try {
         const { askGemini } = await import('../services/aiService.js');
-        const answer = await askGemini(senderJid, promptText);
+        const answer = await askGemini(senderJid, promptText, { sock, remoteJid, msg });
 
         if (answer.startsWith('❌') || answer.startsWith('⚠️')) {
           await setReaction(sock, remoteJid, key, answer.startsWith('⚠️') ? '⚠️' : '❌');

@@ -1,5 +1,13 @@
+import { proto } from '@whiskeysockets/baileys';
 import { playboxService } from './playboxService.js';
 import { logger } from '../utils/logger.js';
+import { WASocket } from '../handlers/types.js';
+
+export interface AiToolContext {
+  sock?: WASocket;
+  remoteJid?: string;
+  msg?: proto.IWebMessageInfo;
+}
 
 /**
  * Declaração formal das ferramentas (Tools) do PlayBox para o Gemini
@@ -221,6 +229,39 @@ export const playboxToolsDeclaration = [
         },
       },
       {
+        name: 'gerarRelatorioPdf',
+        description: 'Gera o Relatório Mensal/Operacional oficial completo do PlayBox em formato PDF (com métricas de pelúcia, entradas, despesas, repasse e histórico) e envia o arquivo PDF diretamente para o operador no chat do WhatsApp.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            periodo: {
+              type: 'STRING',
+              description: "Período do relatório: 'mes' (padrão, acumulado do mês atual), '24h-anterior', '12h-atual' ou 'hoje'.",
+            },
+            estabelecimentoId: {
+              type: 'NUMBER',
+              description: 'Filtrar pelo ID numérico de um estabelecimento parceiro (ex: 3 para Praça do Sabor).',
+            },
+            maquinaId: {
+              type: 'NUMBER',
+              description: 'Filtrar por uma máquina específica.',
+            },
+            dataInicio: {
+              type: 'STRING',
+              description: 'Data de início customizada no formato YYYY-MM-DD.',
+            },
+            dataFim: {
+              type: 'STRING',
+              description: 'Data de término customizada no formato YYYY-MM-DD.',
+            },
+            incluirHistorico: {
+              type: 'BOOLEAN',
+              description: 'Se true (padrão), inclui a tabela completa de histórico de transações e movimentações no PDF.',
+            },
+          },
+        },
+      },
+      {
         name: 'executarAcaoOperacional',
         description: 'Executa ações operacionais como forçar relatório nos grupos, verificar máquinas offline, sincronizar transações ou disparar alerta de estoque.',
         parameters: {
@@ -241,11 +282,54 @@ export const playboxToolsDeclaration = [
 /**
  * Executor dinâmico das chamadas de ferramentas disparadas pelo Gemini
  */
-export async function executePlayboxTool(name: string, args: Record<string, any>): Promise<any> {
+export async function executePlayboxTool(
+  name: string,
+  args: Record<string, any>,
+  context?: AiToolContext
+): Promise<any> {
   logger.info({ name, args }, 'Executando ferramenta de IA (Tool Call)');
 
   try {
     switch (name) {
+      case 'gerarRelatorioPdf': {
+        const { periodo = 'mes', estabelecimentoId, maquinaId, dataInicio, dataFim, incluirHistorico = true } = args;
+        const pdfBuffer = await playboxService.getRelatorioPdf({
+          periodo,
+          estabelecimentoId,
+          maquinaId,
+          dataInicio,
+          dataFim,
+          incluirHistorico,
+        });
+
+        const safePeriodo = (periodo || 'mes').toLowerCase();
+        const filename = `relatorio-operacoes${estabelecimentoId ? `-estab-${estabelecimentoId}` : ''}-${safePeriodo}.pdf`;
+
+        if (context?.sock && context?.remoteJid) {
+          await context.sock.sendMessage(
+            context.remoteJid,
+            {
+              document: pdfBuffer,
+              mimetype: 'application/pdf',
+              fileName: filename,
+              caption: `📄 *Relatório de Operações PlayBox* (${safePeriodo.toUpperCase()})`,
+            },
+            context.msg ? { quoted: context.msg as any } : undefined
+          );
+          return {
+            sucesso: true,
+            mensagem: `O relatório oficial em PDF (${filename}) foi gerado com sucesso e enviado diretamente aqui no chat do WhatsApp!`,
+            arquivo: filename,
+            tamanhoBytes: pdfBuffer.length,
+          };
+        }
+
+        return {
+          sucesso: true,
+          mensagem: `PDF "${filename}" gerado com sucesso (${pdfBuffer.length} bytes).`,
+        };
+      }
+
       case 'consultarEstoquePelucias': {
         const { apenasEstoqueBaixo, cidade, estabelecimentoId, maquinaId } = args;
         return await playboxService.getEstoque({

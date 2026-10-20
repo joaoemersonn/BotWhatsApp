@@ -5,6 +5,7 @@ export type WASocket = ReturnType<typeof makeWASocket>;
 export interface CommandContext {
   sock: WASocket;
   message: proto.IWebMessageInfo;
+  remoteJid: string;
   senderJid: string;
   fromMe: boolean;
   isGroup: boolean;

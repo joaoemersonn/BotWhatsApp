@@ -77,11 +77,12 @@ export function buildReportsMenuText(): string {
   return [
     '📊 *RELATÓRIOS DE FATURAMENTO*',
     '',
-    'Escolha o período que deseja consultar:',
+    'Escolha o formato e período que deseja:',
     '',
-    '1️⃣ - ⏱️ Últimas 12 Horas',
+    '1️⃣ - ⏱️ Últimas 12 Horas (Resumo)',
     '2️⃣ - 📅 Últimas 24 Horas (Ontem)',
     '3️⃣ - 🗓️ Acumulado do Mês Atual',
+    '4️⃣ - 📄 *Gerar Relatório Oficial em PDF*',
     '',
     '↩️ _Envie *0* para voltar ao menu principal._',
   ].join('\n');

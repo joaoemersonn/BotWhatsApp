@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { config } from '../config/env.js';
 import { logger } from '../utils/logger.js';
-import { playboxToolsDeclaration, executePlayboxTool } from './aiTools.js';
+import { playboxToolsDeclaration, executePlayboxTool, AiToolContext } from './aiTools.js';
 
 interface ChatMessage {
   role: 'user' | 'model';
@@ -67,7 +67,7 @@ export function clearUserHistory(jid: string): void {
 /**
  * Envia uma mensagem para o Google Gemini com suporte total a Function Calling
  */
-export async function askGemini(userId: string, prompt: string): Promise<string> {
+export async function askGemini(userId: string, prompt: string, context?: AiToolContext): Promise<string> {
   const apiKey = config.geminiApiKey;
   if (!apiKey) {
     return '⚠️ A inteligência artificial ainda não foi configurada com a chave `GEMINI_API_KEY`.';
@@ -168,7 +168,7 @@ export async function askGemini(userId: string, prompt: string): Promise<string>
         const toolResponses: any[] = [];
         for (const fc of functionCalls) {
           const { name, args } = fc.functionCall;
-          const result = await executePlayboxTool(name, args || {});
+          const result = await executePlayboxTool(name, args || {}, context);
           toolResponses.push({
             functionResponse: {
               name,

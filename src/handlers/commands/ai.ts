@@ -6,7 +6,7 @@ export const aiCommand: Command = {
   name: 'ia',
   description: 'Converse com o assistente inteligente da operação',
   aliases: ['ai', 'gpt', 'gemini'],
-  execute: async ({ reply, args, senderJid, body }) => {
+  execute: async ({ reply, args, senderJid, remoteJid, message, sock }) => {
     const prompt = args.join(' ').trim();
 
     if (!prompt) {
@@ -31,8 +31,8 @@ export const aiCommand: Command = {
       return;
     }
 
-    // Faz a consulta ao Gemini
-    const answer = await askGemini(senderJid, prompt);
+    // Faz a consulta ao Gemini passando o contexto do WhatsApp para envio de arquivos/PDFs
+    const answer = await askGemini(senderJid, prompt, { sock, remoteJid, msg: message });
     await reply(answer);
   },
 };
