@@ -13,6 +13,7 @@ import { config } from '../config/env.js';
 import { logger } from '../utils/logger.js';
 import { handleMessages } from '../handlers/messageHandler.js';
 import { WASocket } from '../handlers/types.js';
+import { formatToWhatsApp } from '../utils/textFormatter.js';
 
 let currentSocket: WASocket | null = null;
 let isReconnecting = false;
@@ -243,7 +244,8 @@ export async function sendTextMessage(to: string, message: string) {
   const jid = await resolveJid(to);
 
   logger.info({ jid, length: message.length }, 'Enviando mensagem de texto ativa via API');
-  const response = await currentSocket.sendMessage(jid, { text: message });
+  const formattedMessage = formatToWhatsApp(message);
+  const response = await currentSocket.sendMessage(jid, { text: formattedMessage });
 
   return {
     success: true,

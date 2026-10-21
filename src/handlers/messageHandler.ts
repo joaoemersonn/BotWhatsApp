@@ -21,6 +21,7 @@ import {
 import { playboxService } from '../services/playboxService.js';
 import { config } from '../config/env.js';
 import { logger } from '../utils/logger.js';
+import { formatToWhatsApp } from '../utils/textFormatter.js';
 
 /**
  * Extrai o texto de qualquer tipo de mensagem do WhatsApp
@@ -215,9 +216,10 @@ export async function handleMessages(
 
       const reply = async (text: string, quoted: boolean = true) => {
         try {
+          const formattedText = formatToWhatsApp(text);
           const sent = await sock.sendMessage(
             remoteJid,
-            { text },
+            { text: formattedText },
             quoted ? { quoted: msg as any } : undefined
           );
           logger.info({ remoteJid, messageId: sent?.key?.id }, 'Resposta enviada com sucesso');

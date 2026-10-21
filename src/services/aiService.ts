@@ -3,6 +3,7 @@ import path from 'path';
 import { config } from '../config/env.js';
 import { logger } from '../utils/logger.js';
 import { playboxToolsDeclaration, executePlayboxTool, AiToolContext } from './aiTools.js';
+import { formatToWhatsApp } from '../utils/textFormatter.js';
 
 interface TextChatMessage {
   role: 'user' | 'model';
@@ -292,6 +293,9 @@ async function processGeminiRequest(
     if (!finalReplyText) {
       finalReplyText = '⚠️ Solicitação processada com sucesso, mas não consegui formatar uma resposta final.';
     }
+
+    // Converte qualquer resíduo de Markdown comum (ex: **negrito**) para formatação nativa do WhatsApp (*negrito*)
+    finalReplyText = formatToWhatsApp(finalReplyText);
 
     // Salva SOMENTE o diálogo textual limpo no histórico de longo prazo (user -> model).
     // Jamais salvamos chamadas de ferramentas brutas no histórico persistente entre mensagens.
