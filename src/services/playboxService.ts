@@ -146,6 +146,41 @@ export interface PlayBoxMovimentacaoEstoque {
   externalRef?: string;
 }
 
+export interface PlayBoxPreviaColeta {
+  maquinaId: number;
+  maquinaNome: string;
+  integracao: string;
+  externalId: string;
+  estabelecimentoId?: number;
+  estabelecimentoNome?: string;
+  dataHoraColeta: string;
+  dataHoraUltimaColeta?: string;
+  valorEsperado: number;
+  primeiraColeta: boolean;
+  diasApurados: number;
+  periodoFormatado: string;
+}
+
+export interface PlayBoxColeta {
+  id: number;
+  maquinaId: number;
+  maquinaNome: string;
+  integracao: string;
+  externalId: string;
+  estabelecimentoId?: number;
+  estabelecimentoNome?: string;
+  dataHoraColeta: string;
+  dataHoraUltimaColeta?: string;
+  valorEsperado: number;
+  valorReal?: number;
+  diferenca?: number;
+  status: 'PENDENTE_CONFERENCIA' | 'CONFERIDO' | 'CONFERIDO_DIVERGENTE' | string;
+  dataHoraConferencia?: string;
+  observacoes?: string;
+  responsavel?: string;
+  createdAt?: string;
+}
+
 /**
  * Métodos da API PlayBox
  */
@@ -253,4 +288,50 @@ export const playboxService = {
     playboxFetch<any>('/api/maquinas/sync', { method: 'POST' }),
   triggerAlertaEstoque: () =>
     playboxFetch<any>('/api/trigger/alerta-estoque', { method: 'POST' }),
+
+  // Coleta de Dinheiro em Espécie (Sangria / Cofres)
+  getPreviaColeta: (maquinaId: number, dataHoraColeta?: string) => {
+    const qs = new URLSearchParams();
+    qs.set('maquinaId', String(maquinaId));
+    if (dataHoraColeta) qs.set('dataHoraColeta', dataHoraColeta);
+    return playboxFetch<PlayBoxPreviaColeta>(`/api/coletas/previa?${qs.toString()}`);
+  },
+  registrarColeta: (data: {
+    maquinaId: number;
+    dataHoraColeta?: string;
+    valorEsperadoOverride?: number;
+    valorReal?: number;
+    observacoes?: string;
+    responsavel?: string;
+  }) =>
+    playboxFetch<PlayBoxColeta>('/api/coletas', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  conferirColeta: (
+    id: number,
+    data: {
+      valorReal: number;
+      dataHoraConferencia?: string;
+      observacoes?: string;
+    }
+  ) =>
+    playboxFetch<PlayBoxColeta>(`/api/coletas/${id}/conferir`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  getColetasPendentes: () =>
+    playboxFetch<PlayBoxColeta[]>('/api/coletas/pendentes'),
+  getColetas: (params?: { maquinaId?: number; estabelecimentoId?: number; status?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.maquinaId) qs.set('maquinaId', String(params.maquinaId));
+    if (params?.estabelecimentoId) qs.set('estabelecimentoId', String(params.estabelecimentoId));
+    if (params?.status) qs.set('status', params.status);
+    const query = qs.toString();
+    return playboxFetch<PlayBoxColeta[]>(`/api/coletas${query ? `?${query}` : ''}`);
+  },
+  getColetaById: (id: number) =>
+    playboxFetch<PlayBoxColeta>(`/api/coletas/${id}`),
+  excluirColeta: (id: number) =>
+    playboxFetch<void>(`/api/coletas/${id}`, { method: 'DELETE' }),
 };

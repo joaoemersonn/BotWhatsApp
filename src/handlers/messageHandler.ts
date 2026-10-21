@@ -9,6 +9,7 @@ import {
   buildEstoqueMenuText,
   buildAlugueisMenuText,
   buildEstabelecimentosMenuText,
+  buildColetasMenuText,
   buildAcoesMenuText,
 } from './commands/menu.js';
 import {
@@ -360,11 +361,16 @@ export async function handleMessages(
           await reply(buildEstabelecimentosMenuText());
           continue;
         } else if (cleanBody === '5') {
+          updateSessionStage(senderJid, 'coletas');
+          await setReaction(sock, remoteJid, key, '✅');
+          await reply(buildColetasMenuText());
+          continue;
+        } else if (cleanBody === '6') {
           updateSessionStage(senderJid, 'acoes');
           await setReaction(sock, remoteJid, key, '✅');
           await reply(buildAcoesMenuText());
           continue;
-        } else if (cleanBody === '6') {
+        } else if (cleanBody === '7') {
           updateSessionStage(senderJid, 'ai_chat');
           await setReaction(sock, remoteJid, key, '🤖');
           await reply(
@@ -378,7 +384,7 @@ export async function handleMessages(
             ].join('\n')
           );
           continue;
-        } else if (cleanBody === '7') {
+        } else if (cleanBody === '8') {
           await setReaction(sock, remoteJid, key, '⏳');
           try {
             const pbHealth = await playboxService.getHealth();
@@ -582,6 +588,61 @@ export async function handleMessages(
           await setReaction(sock, remoteJid, key, '🔑');
           await reply(
             '🔑 *Consulta de PIX:*\nDigite o nome ou ID do estabelecimento que deseja consultar, ou converse diretamente com a IA!'
+          );
+          continue;
+        }
+      }
+
+      // Submenu: COLETA DE DINHEIRO (SANGRIA & COFRES)
+      if (currentStage === 'coletas') {
+        const { formatColetasPendentes, formatHistoricoColetas } = await import('./commands/playboxFormatters.js');
+        if (cleanBody === '1') {
+          await setReaction(sock, remoteJid, key, '⏳');
+          await reply('⏳ Buscando coletas pendentes de conferência...');
+          try {
+            const pendentes = await playboxService.getColetasPendentes();
+            await setReaction(sock, remoteJid, key, '✅');
+            await reply(formatColetasPendentes(pendentes));
+          } catch (err: any) {
+            await setReaction(sock, remoteJid, key, '❌');
+            await reply(`❌ Erro ao buscar coletas pendentes: ${err.message}`);
+          }
+          continue;
+        } else if (cleanBody === '2') {
+          await setReaction(sock, remoteJid, key, '⏳');
+          await reply('⏳ Buscando histórico recente de coletas...');
+          try {
+            const historico = await playboxService.getColetas();
+            await setReaction(sock, remoteJid, key, '✅');
+            await reply(formatHistoricoColetas(historico));
+          } catch (err: any) {
+            await setReaction(sock, remoteJid, key, '❌');
+            await reply(`❌ Erro ao buscar histórico de coletas: ${err.message}`);
+          }
+          continue;
+        } else if (cleanBody === '3') {
+          await setReaction(sock, remoteJid, key, '💡');
+          await reply(
+            [
+              '💡 *COMO GERENCIAR COLETAS COM A IA:*',
+              '',
+              'Você pode conversar naturalmente comigo para qualquer etapa da coleta:',
+              '',
+              '• 💵 *Ver valor esperado no cofre:*',
+              '  _"Quanto tem pra coletar na máquina 1?"_ ou _"Qual a prévia de coleta da máquina 2?"_',
+              '',
+              '• 📥 *Registrar sangria no local:*',
+              '  _"Acabei de recolher o dinheiro da máquina 1"_ (fica pendente para conferir depois) ou',
+              '  _"Coletei o dinheiro da máquina 1, contei R$ 250,00"_ (já confere e bate na hora).',
+              '',
+              '• ⚖️ *Conferir malote na base:*',
+              '  _"Confere a coleta ID 4 com R$ 200,00"_ ou _"Conferi a coleta da máquina 1, deu R$ 180,00"_.',
+              '',
+              '• 📋 *Listar pendências:*',
+              '  _"Quais coletas estão pendentes de contagem?"_',
+              '',
+              '↩️ _Digite *0* para voltar ao menu principal._',
+            ].join('\n')
           );
           continue;
         }

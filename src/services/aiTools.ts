@@ -275,6 +275,113 @@ export const playboxToolsDeclaration = [
           required: ['acao'],
         },
       },
+      {
+        name: 'consultarPreviaColeta',
+        description: 'Calcula a prévia do valor esperado de dinheiro em espécie (cédulas/moedas) acumulado no cofre de uma máquina desde a última coleta até agora, baseado nas transações.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            maquinaId: {
+              type: 'NUMBER',
+              description: 'ID numérico da máquina no PlayBox.',
+            },
+            dataHoraColeta: {
+              type: 'STRING',
+              description: 'Data e hora da coleta pretendida no formato ISO (opcional, padrão é agora).',
+            },
+          },
+          required: ['maquinaId'],
+        },
+      },
+      {
+        name: 'registrarColetaDinheiro',
+        description: 'Registra o recolhimento/sangria física de dinheiro no cofre de uma máquina. Se valorReal for informado, concilia imediatamente calculando sobras ou faltas. Se não for informado, a coleta fica como PENDENTE_CONFERENCIA para contagem posterior.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            maquinaId: {
+              type: 'NUMBER',
+              description: 'ID da máquina onde foi realizada a coleta.',
+            },
+            valorReal: {
+              type: 'NUMBER',
+              description: 'Valor total em reais (R$) contado fisicamente no dinheiro coletado (opcional se for contar depois).',
+            },
+            valorEsperadoOverride: {
+              type: 'NUMBER',
+              description: 'Valor esperado manual caso deseje sobrepor o cálculo automático do sistema.',
+            },
+            observacoes: {
+              type: 'STRING',
+              description: 'Observações sobre a coleta ou malote (ex: "Notas amassadas", "Envelope lacrado nº 123").',
+            },
+            responsavel: {
+              type: 'STRING',
+              description: 'Nome do operador ou responsável que realizou a sangria.',
+            },
+            dataHoraColeta: {
+              type: 'STRING',
+              description: 'Data e hora em que a retirada física ocorreu (ISO).',
+            },
+          },
+          required: ['maquinaId'],
+        },
+      },
+      {
+        name: 'conferirColetaDinheiro',
+        description: 'Conclui e concilia uma coleta que estava PENDENTE_CONFERENCIA, informando o valor real contado no malote para bater com o valor esperado e identificar se houve sobra ou falta de caixa.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            coletaId: {
+              type: 'NUMBER',
+              description: 'ID numérico da coleta pendente a ser conferida.',
+            },
+            valorReal: {
+              type: 'NUMBER',
+              description: 'Valor total em reais (R$) contado no envelope/malote.',
+            },
+            observacoes: {
+              type: 'STRING',
+              description: 'Observações adicionais da conferência.',
+            },
+            dataHoraConferencia: {
+              type: 'STRING',
+              description: 'Data e hora da conferência (ISO).',
+            },
+          },
+          required: ['coletaId', 'valorReal'],
+        },
+      },
+      {
+        name: 'consultarColetasPendentes',
+        description: 'Lista todas as coletas de dinheiro em espécie que foram retiradas das máquinas e estão com status PENDENTE_CONFERENCIA, aguardando contagem física.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {},
+        },
+      },
+      {
+        name: 'consultarHistoricoColetas',
+        description: 'Consulta o histórico de coletas e sangrias de dinheiro realizadas, com filtros opcionais por máquina, estabelecimento ou status.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            maquinaId: {
+              type: 'NUMBER',
+              description: 'Filtrar por máquina específica.',
+            },
+            estabelecimentoId: {
+              type: 'NUMBER',
+              description: 'Filtrar por estabelecimento específico.',
+            },
+            status: {
+              type: 'STRING',
+              description: "Filtrar por status: 'PENDENTE_CONFERENCIA', 'CONFERIDO' ou 'CONFERIDO_DIVERGENTE'.",
+            },
+          },
+        },
+      },
     ],
   },
 ];
@@ -445,6 +552,45 @@ export async function executePlayboxTool(
           return await playboxService.sincronizarEstoqueVendProMax();
         }
         throw new Error(`Ação operacional desconhecida: "${acao}"`);
+      }
+
+      case 'consultarPreviaColeta': {
+        const { maquinaId, dataHoraColeta } = args;
+        return await playboxService.getPreviaColeta(Number(maquinaId), dataHoraColeta);
+      }
+
+      case 'registrarColetaDinheiro': {
+        const { maquinaId, dataHoraColeta, valorEsperadoOverride, valorReal, observacoes, responsavel } = args;
+        return await playboxService.registrarColeta({
+          maquinaId: Number(maquinaId),
+          dataHoraColeta,
+          valorEsperadoOverride: valorEsperadoOverride !== undefined ? Number(valorEsperadoOverride) : undefined,
+          valorReal: valorReal !== undefined ? Number(valorReal) : undefined,
+          observacoes,
+          responsavel,
+        });
+      }
+
+      case 'conferirColetaDinheiro': {
+        const { coletaId, valorReal, dataHoraConferencia, observacoes } = args;
+        return await playboxService.conferirColeta(Number(coletaId), {
+          valorReal: Number(valorReal),
+          dataHoraConferencia,
+          observacoes,
+        });
+      }
+
+      case 'consultarColetasPendentes': {
+        return await playboxService.getColetasPendentes();
+      }
+
+      case 'consultarHistoricoColetas': {
+        const { maquinaId, estabelecimentoId, status } = args;
+        return await playboxService.getColetas({
+          maquinaId: maquinaId ? Number(maquinaId) : undefined,
+          estabelecimentoId: estabelecimentoId ? Number(estabelecimentoId) : undefined,
+          status,
+        });
       }
 
       default:

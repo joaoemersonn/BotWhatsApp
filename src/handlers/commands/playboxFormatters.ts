@@ -1,4 +1,11 @@
-import { PlayBoxRelatorio, PlayBoxAluguel, PlayBoxEstabelecimento, PlayBoxEstoqueResponse } from '../../services/playboxService.js';
+import {
+  PlayBoxRelatorio,
+  PlayBoxAluguel,
+  PlayBoxEstabelecimento,
+  PlayBoxEstoqueResponse,
+  PlayBoxPreviaColeta,
+  PlayBoxColeta,
+} from '../../services/playboxService.js';
 
 export function formatCurrency(value: number = 0): string {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -110,5 +117,88 @@ export function formatEstoque(estoque: PlayBoxEstoqueResponse): string {
   });
 
   lines.push('', '↩️ _Digite *0* para voltar ao menu principal._');
+  return lines.join('\n');
+}
+
+export function formatPreviaColeta(p: PlayBoxPreviaColeta): string {
+  const ultimaStr = p.dataHoraUltimaColeta
+    ? new Date(p.dataHoraUltimaColeta).toLocaleString('pt-BR')
+    : 'Marco Zero (Primeira Coleta)';
+
+  return [
+    '💵 *PRÉVIA DE VALOR ESPERADO (COLETA)*',
+    '',
+    `• *Máquina:* ${p.maquinaNome} [ID: ${p.maquinaId}]`,
+    `• *Local:* ${p.estabelecimentoNome || 'Não informado'}`,
+    `• *Período:* ${p.periodoFormatado}`,
+    `• *Dias Apurados:* ${p.diasApurados} dia(s)`,
+    `• *Última Coleta:* ${ultimaStr}`,
+    '',
+    `💰 *Valor Esperado em Espécie:* *${formatCurrency(p.valorEsperado)}*`,
+    '',
+    '💡 _Este é o valor em dinheiro (notas/moedas) calculado com base nas transações registradas no cofre._',
+    '',
+    '↩️ _Digite *0* para voltar ao menu principal._',
+  ].join('\n');
+}
+
+export function formatColetasPendentes(coletas: PlayBoxColeta[]): string {
+  if (!coletas || coletas.length === 0) {
+    return [
+      '💵 *COLETAS PENDENTES DE CONFERÊNCIA*',
+      '',
+      '✅ Nenhuma coleta pendente no momento! Todos os caixas foram conferidos e conciliados.',
+      '',
+      '↩️ _Digite *0* para voltar ao menu principal._',
+    ].join('\n');
+  }
+
+  const lines = [
+    `💵 *COLETAS PENDENTES DE CONFERÊNCIA* (${coletas.length}):`,
+    '',
+  ];
+
+  coletas.forEach((c) => {
+    const dataStr = new Date(c.dataHoraColeta).toLocaleString('pt-BR');
+    lines.push(`• *[#${c.id}] ${c.maquinaNome}* - ${c.estabelecimentoNome || 'Sem local'}`);
+    lines.push(`  Retirada: ${dataStr} | Esperado: *${formatCurrency(c.valorEsperado)}*`);
+    if (c.responsavel) lines.push(`  Resp: ${c.responsavel}`);
+    lines.push('');
+  });
+
+  lines.push('💡 _Para conferir uma coleta, fale com a IA: "Conferir coleta ID X com R$ Y"_');
+  lines.push('', '↩️ _Digite *0* para voltar ao menu principal._');
+  return lines.join('\n');
+}
+
+export function formatHistoricoColetas(coletas: PlayBoxColeta[]): string {
+  if (!coletas || coletas.length === 0) {
+    return [
+      '📜 *HISTÓRICO DE COLETAS*',
+      '',
+      'Nenhum registro de coleta encontrado.',
+      '',
+      '↩️ _Digite *0* para voltar ao menu principal._',
+    ].join('\n');
+  }
+
+  const lines = [
+    `📜 *HISTÓRICO DE COLETAS* (Últimos ${Math.min(coletas.length, 10)}):`,
+    '',
+  ];
+
+  coletas.slice(0, 10).forEach((c) => {
+    let statusIcon = '⏳ Pendente';
+    if (c.status === 'CONFERIDO') statusIcon = '✅ Exato';
+    else if (c.status === 'CONFERIDO_DIVERGENTE') statusIcon = '⚠️ Divergente';
+
+    const dataStr = new Date(c.dataHoraColeta).toLocaleDateString('pt-BR');
+    const difStr = c.diferenca !== undefined && c.diferenca !== null ? ` | Dif: ${formatCurrency(c.diferenca)}` : '';
+    lines.push(`• *[#${c.id}] ${c.maquinaNome}* (${dataStr})`);
+    lines.push(`  Esp: ${formatCurrency(c.valorEsperado)} | Real: ${c.valorReal != null ? formatCurrency(c.valorReal) : 'N/C'}${difStr} | ${statusIcon}`);
+    lines.push('');
+  });
+
+  lines.push('↩️ _Digite *0* para voltar ao menu principal._');
   return lines.join('\n');
 }

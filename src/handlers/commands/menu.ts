@@ -7,6 +7,7 @@ export type SessionStage =
   | 'estoque'
   | 'alugueis'
   | 'estabelecimentos'
+  | 'coletas'
   | 'acoes'
   | 'ai_chat';
 
@@ -50,11 +51,26 @@ export function buildMainMenuText(): string {
     '2️⃣ - 🧸 *Estoque de Pelúcias & Alertas*',
     '3️⃣ - 💰 *Aluguéis & Repasses*',
     '4️⃣ - 📍 *Estabelecimentos & Chaves PIX*',
-    '5️⃣ - ⚡ *Ações & Sincronizações*',
-    '6️⃣ - 🤖 *Assistente IA (Copiloto)*',
-    '7️⃣ - 🟢 *Status dos Serviços*',
+    '5️⃣ - 💵 *Coleta de Dinheiro (Sangria)*',
+    '6️⃣ - ⚡ *Ações & Sincronizações*',
+    '7️⃣ - 🤖 *Assistente IA (Copiloto)*',
+    '8️⃣ - 🟢 *Status dos Serviços*',
     '',
     '💡 _Envie *0* a qualquer momento para voltar ao início._',
+  ].join('\n');
+}
+
+export function buildColetasMenuText(): string {
+  return [
+    '💵 *COLETA DE DINHEIRO (SANGRIA & COFRES)*',
+    '',
+    'Escolha uma das opções:',
+    '',
+    '1️⃣ - ⏳ Ver Coletas Pendentes de Conferência',
+    '2️⃣ - 📜 Ver Histórico das Últimas Coletas',
+    '3️⃣ - 💡 Como Registrar / Conferir Coleta com a IA',
+    '',
+    '↩️ _Envie *0* para voltar ao menu principal._',
   ].join('\n');
 }
 
