@@ -62,6 +62,16 @@ export interface PlayBoxRelatorio {
     faturamentoBruto: number;
     quantidadePremios: number;
   }>;
+  porDia?: Array<{
+    data: string;
+    dataFormatada: string;
+    faturamentoBruto: number;
+    faturamentoLiquido: number;
+    quantidadePremios: number;
+    especie: number;
+    pix: number;
+    cartao: number;
+  }>;
 }
 
 export interface PlayBoxEstabelecimento {
@@ -89,6 +99,38 @@ export interface PlayBoxAluguel {
   pago: boolean;
   dataPagamento?: string | null;
   meioPagamentoUtilizado?: string | null;
+  tipoAluguel?: string;
+  valorManual?: boolean;
+  observacao?: string;
+  statusFormatado?: string;
+  diasAtraso?: number;
+  isVencido?: boolean;
+  isAluguelDinamico?: boolean;
+}
+
+export interface PlayBoxAluguelResumo {
+  mesAno: string;
+  totalGeral: number;
+  totalPago: number;
+  totalPendente: number;
+  totalVencido: number;
+  totalEmAberto: number;
+  qtdTotal: number;
+  qtdPago: number;
+  qtdPendente: number;
+  qtdVencido: number;
+  qtdEmAberto: number;
+  qtdDinamicos: number;
+}
+
+export interface PlayBoxMonitorStatus {
+  totalOffline: number;
+  maquinasOffline: Array<{
+    nome: string;
+    offlineDesde: string;
+  }>;
+  failingIntegrations: string[];
+  ultimaNotificacao?: string;
 }
 
 export interface PlayBoxMaquina {
@@ -174,7 +216,7 @@ export interface PlayBoxColeta {
   valorEsperado: number;
   valorReal?: number;
   diferenca?: number;
-  status: 'PENDENTE_CONFERENCIA' | 'CONFERIDO' | 'CONFERIDO_DIVERGENTE' | string;
+  status: 'PENDENTE_CONFERENCIA' | 'CONFERIDO' | 'CONFERIDO_DIVERGENTE' | 'CANCELADA' | string;
   dataHoraConferencia?: string;
   observacoes?: string;
   responsavel?: string;
@@ -262,12 +304,84 @@ export const playboxService = {
     playboxFetch<any>('/api/estoque/sincronizar-vendpromax', { method: 'POST' }),
 
   // Aluguéis e Repasses
+  getAlugueis: (params?: { mesAno?: string; status?: string; estabelecimentoId?: number; cidade?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.mesAno) qs.set('mesAno', params.mesAno);
+    if (params?.status) qs.set('status', params.status);
+    if (params?.estabelecimentoId) qs.set('estabelecimentoId', String(params.estabelecimentoId));
+    if (params?.cidade) qs.set('cidade', params.cidade);
+    const query = qs.toString();
+    return playboxFetch<PlayBoxAluguel[]>(`/api/alugueis${query ? `?${query}` : ''}`);
+  },
+  getAlugueisMeses: () => playboxFetch<string[]>('/api/alugueis/meses'),
+  getAlugueisResumo: (mesAno?: string) => {
+    const qs = new URLSearchParams();
+    if (mesAno) qs.set('mesAno', mesAno);
+    const query = qs.toString();
+    return playboxFetch<PlayBoxAluguelResumo>(`/api/alugueis/resumo${query ? `?${query}` : ''}`);
+  },
+  getAlugueisHistoricoEstabelecimento: (id: number) =>
+    playboxFetch<PlayBoxAluguel[]>(`/api/alugueis/estabelecimento/${id}`),
   getAlugueisVencendo: (dias: number = 7) =>
     playboxFetch<PlayBoxAluguel[]>(`/api/alugueis/vencendo?dias=${dias}`),
   getAlugueisPendentes: () => playboxFetch<PlayBoxAluguel[]>('/api/alugueis/pendentes'),
   getAlugueisPagos: () => playboxFetch<PlayBoxAluguel[]>('/api/alugueis/pagos'),
-  pagarAluguel: (id: number) =>
-    playboxFetch<any>(`/api/alugueis/${id}/pagar`, { method: 'PUT' }),
+  gerarAlugueisMes: (mesAno?: string) => {
+    const qs = new URLSearchParams();
+    if (mesAno) qs.set('mesAno', mesAno);
+    const query = qs.toString();
+    return playboxFetch<PlayBoxAluguel[]>(`/api/alugueis/gerar-mes${query ? `?${query}` : ''}`, { method: 'POST' });
+  },
+  pagarAluguel: (id: number, dados?: { dataPagamento?: string; meio?: string; obs?: string }) =>
+    playboxFetch<PlayBoxAluguel>(`/api/alugueis/${id}/pagar`, {
+      method: 'PUT',
+      body: dados ? JSON.stringify(dados) : undefined,
+    }),
+  estornarPagamentoAluguel: (id: number) =>
+    playboxFetch<PlayBoxAluguel>(`/api/alugueis/${id}/estornar`, { method: 'PUT' }),
+  definirValorAluguel: (id: number, valor: number, obs?: string) => {
+    const qs = new URLSearchParams();
+    qs.set('valor', String(valor));
+    if (obs) qs.set('obs', obs);
+    return playboxFetch<PlayBoxAluguel>(`/api/alugueis/${id}/valor?${qs.toString()}`, { method: 'PUT' });
+  },
+  definirValorAluguelPorEstabelecimento: (estabelecimentoId: number, mesAno: string, valor: number, obs?: string) => {
+    const qs = new URLSearchParams();
+    qs.set('estabelecimentoId', String(estabelecimentoId));
+    qs.set('mesAno', mesAno);
+    qs.set('valor', String(valor));
+    if (obs) qs.set('obs', obs);
+    return playboxFetch<PlayBoxAluguel>(`/api/alugueis/definir-valor?${qs.toString()}`, { method: 'PUT' });
+  },
+  calcularAluguelDinamico: (
+    id: number,
+    params?: {
+      valorUnitarioPelucia?: number;
+      taxaMaquininha?: number;
+      telemetria?: number;
+      visitas?: number;
+      percentualRepasse?: number;
+    }
+  ) => {
+    const qs = new URLSearchParams();
+    if (params?.valorUnitarioPelucia !== undefined) qs.set('valorUnitarioPelucia', String(params.valorUnitarioPelucia));
+    if (params?.taxaMaquininha !== undefined) qs.set('taxaMaquininha', String(params.taxaMaquininha));
+    if (params?.telemetria !== undefined) qs.set('telemetria', String(params.telemetria));
+    if (params?.visitas !== undefined) qs.set('visitas', String(params.visitas));
+    if (params?.percentualRepasse !== undefined) qs.set('percentualRepasse', String(params.percentualRepasse));
+    const query = qs.toString();
+    return playboxFetch<PlayBoxAluguel>(`/api/alugueis/${id}/calcular-dinamico${query ? `?${query}` : ''}`, {
+      method: 'POST',
+    });
+  },
+  calcularAlugueisDinamicosMes: (mesAno?: string) => {
+    const qs = new URLSearchParams();
+    if (mesAno) qs.set('mesAno', mesAno);
+    const query = qs.toString();
+    return playboxFetch<PlayBoxAluguel[]>(`/api/alugueis/calcular-dinamicos${query ? `?${query}` : ''}`, {
+      method: 'POST',
+    });
+  },
 
   // Estabelecimentos
   getEstabelecimentos: () => playboxFetch<PlayBoxEstabelecimento[]>('/api/estabelecimentos'),
@@ -276,8 +390,14 @@ export const playboxService = {
 
   // Máquinas
   getMaquinas: () => playboxFetch<PlayBoxMaquina[]>('/api/maquinas'),
+  fetchMaquinaInfo: (integracao: string, externalId: string) => {
+    const qs = new URLSearchParams({ integracao, externalId }).toString();
+    return playboxFetch<{ nome: string; integracao: string; externalId: string }>(`/api/maquinas/fetch-info?${qs}`);
+  },
 
-  // Triggers operacionais
+  // Monitoramento e Triggers operacionais
+  getMonitorStatus: () =>
+    playboxFetch<PlayBoxMonitorStatus>('/api/monitor/status'),
   triggerReport: () =>
     playboxFetch<any>('/api/trigger/report', { method: 'POST' }),
   triggerMonitor: () =>
@@ -319,6 +439,11 @@ export const playboxService = {
     playboxFetch<PlayBoxColeta>(`/api/coletas/${id}/conferir`, {
       method: 'PUT',
       body: JSON.stringify(data),
+    }),
+  cancelarColeta: (id: number, motivo?: string) =>
+    playboxFetch<PlayBoxColeta>(`/api/coletas/${id}/cancelar`, {
+      method: 'PUT',
+      body: JSON.stringify(motivo ? { motivo } : {}),
     }),
   getColetasPendentes: () =>
     playboxFetch<PlayBoxColeta[]>('/api/coletas/pendentes'),

@@ -50,20 +50,128 @@ export const playboxToolsDeclaration = [
       },
       {
         name: 'consultarAlugueisERepasses',
-        description: 'Consulta a lista de aluguéis e repasses das máquinas aos estabelecimentos.',
+        description: 'Consulta a lista de aluguéis e repasses das máquinas aos estabelecimentos parceiros com filtros avançados por mês (mesAno), status (EM_ABERTO, PAGO, VENCIDO), cidade ou estabelecimento.',
         parameters: {
           type: 'OBJECT',
           properties: {
+            mesAno: {
+              type: 'STRING',
+              description: "Mês no formato YYYY-MM (ex: '2026-10') ou 'TODOS'.",
+            },
+            status: {
+              type: 'STRING',
+              description: "Filtrar por status: 'EM_ABERTO' (ou 'PENDENTE'), 'PAGO', 'VENCIDO' ou 'TODOS'.",
+            },
+            estabelecimentoId: {
+              type: 'NUMBER',
+              description: 'Filtrar por ID do estabelecimento parceiro.',
+            },
+            cidade: {
+              type: 'STRING',
+              description: 'Filtrar por cidade (ex: Custódia, Sertânia, Monteiro, Sumé).',
+            },
             tipo: {
               type: 'STRING',
-              description: "Tipo de consulta: 'vencendo' (a vencer em breve), 'pendentes' (atrasados/não pagos) ou 'pagos' (já quitados).",
+              description: "Tipo legado/atalho: 'vencendo' (a vencer em breve), 'pendentes' (atrasados/não pagos) ou 'pagos' (já quitados).",
             },
             dias: {
               type: 'NUMBER',
-              description: 'Quantidade de dias à frente para filtrar vencimentos (padrão: 7).',
+              description: "Quantidade de dias à frente para filtrar vencimentos quando tipo for 'vencendo' (padrão: 7).",
             },
           },
-          required: ['tipo'],
+        },
+      },
+      {
+        name: 'consultarResumoAlugueis',
+        description: 'Obtém o resumo estatístico consolidado de aluguéis e repasses (total contratado, valor pago, total em aberto, vencidos com contagem e contratos dinâmicos) para um mês ou geral.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            mesAno: {
+              type: 'STRING',
+              description: "Mês no formato YYYY-MM (ex: '2026-10') ou deixe vazio para geral.",
+            },
+          },
+        },
+      },
+      {
+        name: 'gerarAlugueisMes',
+        description: 'Gera os lançamentos de aluguéis e repasses mensais para todos os estabelecimentos cadastrados no PlayBox para o mês especificado.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            mesAno: {
+              type: 'STRING',
+              description: "Mês no formato YYYY-MM (ex: '2026-10'). Padrão: mês atual.",
+            },
+          },
+        },
+      },
+      {
+        name: 'ajustarValorAluguel',
+        description: 'Define ou ajusta manualmente o valor de aluguel/repasse de um registro específico (por aluguelId) ou por estabelecimento e mês.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            aluguelId: {
+              type: 'NUMBER',
+              description: 'ID do lançamento de aluguel (opcional se informar estabelecimentoId e mesAno).',
+            },
+            estabelecimentoId: {
+              type: 'NUMBER',
+              description: 'ID do estabelecimento parceiro (ex: 3 para Praça do Sabor).',
+            },
+            mesAno: {
+              type: 'STRING',
+              description: "Mês no formato YYYY-MM (ex: '2026-10').",
+            },
+            valor: {
+              type: 'NUMBER',
+              description: 'Novo valor do aluguel/repasse em reais (R$).',
+            },
+            observacao: {
+              type: 'STRING',
+              description: 'Motivo ou observação do ajuste de valor.',
+            },
+          },
+          required: ['valor'],
+        },
+      },
+      {
+        name: 'calcularAluguelDinamico',
+        description: 'Calcula o aluguel dinâmico (25% sobre o lucro operacional do mês, deduzindo telemetria R$ 69,90, manutenção R$ 350,00, pelúcia R$ 19,90 e taxa de maquininha) para um aluguel específico ou para todos os contratos dinâmicos do mês.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            aluguelId: {
+              type: 'NUMBER',
+              description: 'ID do lançamento de aluguel a calcular (opcional se mesAno for informado para recalcular todos).',
+            },
+            mesAno: {
+              type: 'STRING',
+              description: "Mês no formato YYYY-MM (ex: '2026-10') para recalcular todos os dinâmicos.",
+            },
+            valorUnitarioPelucia: {
+              type: 'NUMBER',
+              description: 'Custo unitário da pelúcia em R$ (padrão: 19.90).',
+            },
+            taxaMaquininha: {
+              type: 'NUMBER',
+              description: 'Taxa percentual da maquininha (padrão: 4.99%).',
+            },
+            telemetria: {
+              type: 'NUMBER',
+              description: 'Mensalidade do sistema de telemetria em R$ (padrão: 69.90).',
+            },
+            visitas: {
+              type: 'NUMBER',
+              description: 'Custos de visitas/manutenção em R$ (padrão: 350.00).',
+            },
+            percentualRepasse: {
+              type: 'NUMBER',
+              description: 'Percentual de repasse sobre o lucro operacional (padrão: 25.0%).',
+            },
+          },
         },
       },
       {
@@ -382,6 +490,50 @@ export const playboxToolsDeclaration = [
           },
         },
       },
+      {
+        name: 'cancelarColetaDinheiro',
+        description: 'Cancela um registro de coleta/sangria de dinheiro física realizada incorretamente, com justificativa/motivo opcional. A coleta cancelada não entra como base de cálculo (Marco Zero) para apurações futuras.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            coletaId: {
+              type: 'NUMBER',
+              description: 'ID da coleta a ser cancelada.',
+            },
+            motivo: {
+              type: 'STRING',
+              description: 'Motivo ou justificativa do cancelamento (opcional).',
+            },
+          },
+          required: ['coletaId'],
+        },
+      },
+      {
+        name: 'consultarStatusMonitor',
+        description: 'Consulta o status atual em tempo real do monitoramento de máquinas offline e saúde das conexões com as integradoras (VENDPROMAX, PAYXYZ, ZAPIZI).',
+        parameters: {
+          type: 'OBJECT',
+          properties: {},
+        },
+      },
+      {
+        name: 'consultarInfoIntegracaoMaquina',
+        description: 'Consulta na integradora externa (VENDPROMAX, PAYXYZ ou ZAPIZI) o nome ou localização de uma máquina pelo seu código/ID externo.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            integracao: {
+              type: 'STRING',
+              description: 'Nome da integradora: VENDPROMAX, PAYXYZ ou ZAPIZI.',
+            },
+            externalId: {
+              type: 'STRING',
+              description: 'ID externo ou código único da máquina na integradora.',
+            },
+          },
+          required: ['integracao', 'externalId'],
+        },
+      },
     ],
   },
 ];
@@ -498,7 +650,7 @@ export async function executePlayboxTool(
       }
 
       case 'consultarAlugueisERepasses': {
-        const { tipo, dias } = args;
+        const { tipo, dias, mesAno, status, estabelecimentoId, cidade } = args;
         if (tipo === 'vencendo') {
           return await playboxService.getAlugueisVencendo(dias || 7);
         }
@@ -508,7 +660,50 @@ export async function executePlayboxTool(
         if (tipo === 'pagos') {
           return await playboxService.getAlugueisPagos();
         }
-        return await playboxService.getAlugueisPendentes();
+        return await playboxService.getAlugueis({
+          mesAno,
+          status,
+          estabelecimentoId: estabelecimentoId ? Number(estabelecimentoId) : undefined,
+          cidade,
+        });
+      }
+
+      case 'consultarResumoAlugueis': {
+        return await playboxService.getAlugueisResumo(args.mesAno);
+      }
+
+      case 'gerarAlugueisMes': {
+        return await playboxService.gerarAlugueisMes(args.mesAno);
+      }
+
+      case 'ajustarValorAluguel': {
+        const { aluguelId, estabelecimentoId, mesAno, valor, observacao } = args;
+        if (aluguelId) {
+          return await playboxService.definirValorAluguel(Number(aluguelId), Number(valor), observacao);
+        }
+        if (estabelecimentoId && mesAno) {
+          return await playboxService.definirValorAluguelPorEstabelecimento(
+            Number(estabelecimentoId),
+            mesAno,
+            Number(valor),
+            observacao
+          );
+        }
+        throw new Error('Informe o "aluguelId" ou a combinação de "estabelecimentoId" e "mesAno".');
+      }
+
+      case 'calcularAluguelDinamico': {
+        const { aluguelId, mesAno, valorUnitarioPelucia, taxaMaquininha, telemetria, visitas, percentualRepasse } = args;
+        if (aluguelId) {
+          return await playboxService.calcularAluguelDinamico(Number(aluguelId), {
+            valorUnitarioPelucia: valorUnitarioPelucia !== undefined ? Number(valorUnitarioPelucia) : undefined,
+            taxaMaquininha: taxaMaquininha !== undefined ? Number(taxaMaquininha) : undefined,
+            telemetria: telemetria !== undefined ? Number(telemetria) : undefined,
+            visitas: visitas !== undefined ? Number(visitas) : undefined,
+            percentualRepasse: percentualRepasse !== undefined ? Number(percentualRepasse) : undefined,
+          });
+        }
+        return await playboxService.calcularAlugueisDinamicosMes(mesAno);
       }
 
       case 'consultarEstabelecimentos': {
@@ -528,7 +723,8 @@ export async function executePlayboxTool(
       }
 
       case 'registrarPagamentoAluguel': {
-        return await playboxService.pagarAluguel(Number(args.aluguelId));
+        const { aluguelId, dataPagamento, meio, obs } = args;
+        return await playboxService.pagarAluguel(Number(aluguelId), { dataPagamento, meio, obs });
       }
 
       case 'executarAcaoOperacional': {
@@ -591,6 +787,20 @@ export async function executePlayboxTool(
           estabelecimentoId: estabelecimentoId ? Number(estabelecimentoId) : undefined,
           status,
         });
+      }
+
+      case 'cancelarColetaDinheiro': {
+        const { coletaId, motivo } = args;
+        return await playboxService.cancelarColeta(Number(coletaId), motivo);
+      }
+
+      case 'consultarStatusMonitor': {
+        return await playboxService.getMonitorStatus();
+      }
+
+      case 'consultarInfoIntegracaoMaquina': {
+        const { integracao, externalId } = args;
+        return await playboxService.fetchMaquinaInfo(integracao, externalId);
       }
 
       default:

@@ -1,6 +1,8 @@
 import {
   PlayBoxRelatorio,
   PlayBoxAluguel,
+  PlayBoxAluguelResumo,
+  PlayBoxMonitorStatus,
   PlayBoxEstabelecimento,
   PlayBoxEstoqueResponse,
   PlayBoxPreviaColeta,
@@ -46,6 +48,22 @@ export function formatRelatorio(rel: PlayBoxRelatorio): string {
   return lines.join('\n');
 }
 
+export function formatAlugueisResumo(resumo: PlayBoxAluguelResumo): string {
+  return [
+    `💰 *RESUMO DE ALUGUÉIS & REPASSES* (${resumo.mesAno})`,
+    '',
+    `• *Total Contratado:* ${formatCurrency(resumo.totalGeral)} (${resumo.qtdTotal} lançamentos)`,
+    `• *Quitados/Pagos:* 🟢 ${formatCurrency(resumo.totalPago)} (${resumo.qtdPago})`,
+    `• *Total em Aberto:* ⏳ ${formatCurrency(resumo.totalEmAberto)} (${resumo.qtdEmAberto})`,
+    `• *Vencidos (Atrasados):* 🔴 ${formatCurrency(resumo.totalVencido)} (${resumo.qtdVencido})`,
+    `• *Contratos Dinâmicos (25% Lucro):* 📊 ${resumo.qtdDinamicos}`,
+    '',
+    '💡 _Fale com a IA para consultar valores por loja ou recalcular repasses dinâmicos._',
+    '',
+    '↩️ _Digite *0* para voltar ao menu principal._',
+  ].join('\n');
+}
+
 export function formatAlugueis(alugueis: PlayBoxAluguel[], titulo: string): string {
   if (!alugueis || alugueis.length === 0) {
     return [
@@ -62,9 +80,13 @@ export function formatAlugueis(alugueis: PlayBoxAluguel[], titulo: string): stri
   alugueis.slice(0, 10).forEach((al) => {
     const est = al.estabelecimento?.nome || 'Local Desconhecido';
     const cid = al.estabelecimento?.cidade ? ` - ${al.estabelecimento.cidade}` : '';
-    const statusIcon = al.pago ? '🟢 Pago' : '⏳ Pendente';
-    const venc = al.dataVencimento.split('-').reverse().join('/');
-    lines.push(`• *${est}${cid}*`);
+    let statusIcon = al.pago ? '🟢 Pago' : '⏳ Em Aberto';
+    if (!al.pago && (al.isVencido || (al.diasAtraso && al.diasAtraso > 0))) {
+      statusIcon = `🔴 Vencido (${al.diasAtraso || 0}d)`;
+    }
+    const dinamicoTag = al.isAluguelDinamico || al.tipoAluguel === 'DINAMICO' ? ' [Dinâmico]' : '';
+    const venc = al.dataVencimento ? al.dataVencimento.split('-').reverse().join('/') : 'N/D';
+    lines.push(`• *${est}${cid}*${dinamicoTag}`);
     lines.push(`  Valor: ${formatCurrency(al.valor)} | Venc: ${venc} | ${statusIcon}`);
   });
 
@@ -191,6 +213,7 @@ export function formatHistoricoColetas(coletas: PlayBoxColeta[]): string {
     let statusIcon = '⏳ Pendente';
     if (c.status === 'CONFERIDO') statusIcon = '✅ Exato';
     else if (c.status === 'CONFERIDO_DIVERGENTE') statusIcon = '⚠️ Divergente';
+    else if (c.status === 'CANCELADA') statusIcon = '🚫 Cancelada';
 
     const dataStr = new Date(c.dataHoraColeta).toLocaleDateString('pt-BR');
     const difStr = c.diferenca !== undefined && c.diferenca !== null ? ` | Dif: ${formatCurrency(c.diferenca)}` : '';
@@ -200,5 +223,31 @@ export function formatHistoricoColetas(coletas: PlayBoxColeta[]): string {
   });
 
   lines.push('↩️ _Digite *0* para voltar ao menu principal._');
+  return lines.join('\n');
+}
+
+export function formatMonitorStatus(status: PlayBoxMonitorStatus): string {
+  const lines = [
+    '📡 *STATUS DO MONITORAMENTO DE MÁQUINAS*',
+    '',
+    `• *Total Offline:* ${status.totalOffline > 0 ? `🔴 *${status.totalOffline} máquina(s)*` : '🟢 Nenhuma (todas online)'}`,
+  ];
+
+  if (status.maquinasOffline && status.maquinasOffline.length > 0) {
+    lines.push('', '⚠️ *Máquinas Desconectadas:*');
+    status.maquinasOffline.forEach((m) => {
+      lines.push(`• *${m.nome}* (Desde: ${m.offlineDesde})`);
+    });
+  }
+
+  if (status.failingIntegrations && status.failingIntegrations.length > 0) {
+    lines.push('', `🚨 *Integradoras com Falha:* ${status.failingIntegrations.join(', ')}`);
+  }
+
+  if (status.ultimaNotificacao) {
+    lines.push('', `⏱️ _Última notificação: ${status.ultimaNotificacao}_`);
+  }
+
+  lines.push('', '↩️ _Digite *0* para voltar ao menu principal._');
   return lines.join('\n');
 }

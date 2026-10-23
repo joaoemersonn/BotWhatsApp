@@ -529,8 +529,20 @@ export async function handleMessages(
 
       // Submenu 2: ALUGUÉIS & REPASSES
       if (currentStage === 'alugueis') {
-        const { formatAlugueis } = await import('./commands/playboxFormatters.js');
+        const { formatAlugueis, formatAlugueisResumo } = await import('./commands/playboxFormatters.js');
         if (cleanBody === '1') {
+          await setReaction(sock, remoteJid, key, '⏳');
+          await reply('⏳ Consultando resumo financeiro de aluguéis e repasses...');
+          try {
+            const resumo = await playboxService.getAlugueisResumo();
+            await setReaction(sock, remoteJid, key, '✅');
+            await reply(formatAlugueisResumo(resumo));
+          } catch (err: any) {
+            await setReaction(sock, remoteJid, key, '❌');
+            await reply(`❌ Erro ao buscar resumo de aluguéis: ${err.message}`);
+          }
+          continue;
+        } else if (cleanBody === '2') {
           await setReaction(sock, remoteJid, key, '⏳');
           await reply('⏳ Buscando aluguéis vencendo nos próximos 7 dias...');
           try {
@@ -542,19 +554,19 @@ export async function handleMessages(
             await reply(`❌ Erro ao buscar vencimentos: ${err.message}`);
           }
           continue;
-        } else if (cleanBody === '2') {
+        } else if (cleanBody === '3') {
           await setReaction(sock, remoteJid, key, '⏳');
-          await reply('⏳ Buscando pagamentos pendentes...');
+          await reply('⏳ Buscando aluguéis com pagamento pendente / em aberto...');
           try {
-            const al = await playboxService.getAlugueisPendentes();
+            const al = await playboxService.getAlugueis({ status: 'EM_ABERTO' });
             await setReaction(sock, remoteJid, key, '✅');
-            await reply(formatAlugueis(al, 'Aluguéis com Pagamento Pendente'));
+            await reply(formatAlugueis(al, 'Aluguéis em Aberto / Pendentes'));
           } catch (err: any) {
             await setReaction(sock, remoteJid, key, '❌');
-            await reply(`❌ Erro ao buscar pendentes: ${err.message}`);
+            await reply(`❌ Erro ao buscar aluguéis em aberto: ${err.message}`);
           }
           continue;
-        } else if (cleanBody === '3') {
+        } else if (cleanBody === '4') {
           await setReaction(sock, remoteJid, key, '⏳');
           await reply('⏳ Buscando pagamentos efetuados...');
           try {
@@ -638,6 +650,9 @@ export async function handleMessages(
               '• ⚖️ *Conferir malote na base:*',
               '  _"Confere a coleta ID 4 com R$ 200,00"_ ou _"Conferi a coleta da máquina 1, deu R$ 180,00"_.',
               '',
+              '• 🚫 *Cancelar coleta incorreta:*',
+              '  _"Cancelar a coleta ID 5 porque registrei errado"_.',
+              '',
               '• 📋 *Listar pendências:*',
               '  _"Quais coletas estão pendentes de contagem?"_',
               '',
@@ -650,6 +665,7 @@ export async function handleMessages(
 
       // Submenu 4: AÇÕES OPERACIONAIS
       if (currentStage === 'acoes') {
+        const { formatMonitorStatus } = await import('./commands/playboxFormatters.js');
         if (cleanBody === '1') {
           await setReaction(sock, remoteJid, key, '⏳');
           await reply('🚀 Disparando envio do relatório nos grupos configurados...');
@@ -664,17 +680,29 @@ export async function handleMessages(
           continue;
         } else if (cleanBody === '2') {
           await setReaction(sock, remoteJid, key, '⏳');
-          await reply('🔍 Iniciando verificação de máquinas offline...');
+          await reply('📡 Verificando status atual das máquinas offline...');
+          try {
+            const status = await playboxService.getMonitorStatus();
+            await setReaction(sock, remoteJid, key, '✅');
+            await reply(formatMonitorStatus(status));
+          } catch (err: any) {
+            await setReaction(sock, remoteJid, key, '❌');
+            await reply(`❌ Erro ao obter status do monitoramento: ${err.message}`);
+          }
+          continue;
+        } else if (cleanBody === '3') {
+          await setReaction(sock, remoteJid, key, '⏳');
+          await reply('🔍 Disparando ciclo de verificação forçada de máquinas offline...');
           try {
             await playboxService.triggerMonitor();
             await setReaction(sock, remoteJid, key, '✅');
-            await reply('✅ Monitoramento concluído com sucesso!');
+            await reply('✅ Ciclo de verificação de máquinas offline concluído!');
           } catch (err: any) {
             await setReaction(sock, remoteJid, key, '❌');
             await reply(`❌ Erro no monitoramento: ${err.message}`);
           }
           continue;
-        } else if (cleanBody === '3') {
+        } else if (cleanBody === '4') {
           await setReaction(sock, remoteJid, key, '⏳');
           await reply('🔄 Disparando sincronização de transações das integradoras...');
           try {
@@ -686,7 +714,7 @@ export async function handleMessages(
             await reply(`❌ Erro ao sincronizar transações: ${err.message}`);
           }
           continue;
-        } else if (cleanBody === '4') {
+        } else if (cleanBody === '5') {
           await setReaction(sock, remoteJid, key, '⏳');
           await reply('🕹️ Descobrindo novas máquinas nas integradoras...');
           try {
