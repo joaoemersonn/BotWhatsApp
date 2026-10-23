@@ -1,10 +1,14 @@
 import { config } from '../config/env.js';
 import { logger } from '../utils/logger.js';
 
+async function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
- * Cliente HTTP para a API do PlayBox Scheduler
+ * Cliente HTTP para a API do PlayBox Scheduler com retry automático e tolerância a reinicializações
  */
-async function playboxFetch<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+async function playboxFetch<T>(endpoint: string, options: RequestInit = {}, maxRetries = 3): Promise<T> {
   const url = `${config.playboxBaseUrl}${endpoint}`;
   const headers = {
     'Content-Type': 'application/json',
@@ -12,17 +16,45 @@ async function playboxFetch<T>(endpoint: string, options: RequestInit = {}): Pro
     ...options.headers,
   };
 
-  try {
-    const res = await fetch(url, { ...options, headers });
-    if (!res.ok) {
-      const errText = await res.text();
-      throw new Error(`Erro na API PlayBox (${res.status}): ${errText}`);
+  let lastError: any = null;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const res = await fetch(url, { ...options, headers });
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Erro na API PlayBox (${res.status}): ${errText}`);
+      }
+      return (await res.json()) as T;
+    } catch (error: any) {
+      lastError = error;
+      const isConnectionRefused =
+        error?.message?.includes('fetch failed') ||
+        error?.cause?.code === 'ECONNREFUSED' ||
+        error?.message?.includes('ECONNREFUSED') ||
+        error?.cause?.message?.includes('ECONNREFUSED');
+
+      if (isConnectionRefused && attempt < maxRetries) {
+        const waitMs = attempt * 1000;
+        logger.warn({ endpoint, attempt, waitMs }, 'PlayBox Scheduler indisponível momentaneamente, tentando novamente...');
+        await delay(waitMs);
+        continue;
+      }
+      break;
     }
-    return (await res.json()) as T;
-  } catch (error: any) {
-    logger.error({ err: error, endpoint }, 'Falha na comunicação com PlayBox');
-    throw error;
   }
+
+  logger.error({ err: lastError, endpoint }, 'Falha na comunicação com PlayBox');
+  if (
+    lastError?.message?.includes('fetch failed') ||
+    lastError?.cause?.code === 'ECONNREFUSED' ||
+    lastError?.message?.includes('ECONNREFUSED')
+  ) {
+    throw new Error(
+      'Não foi possível conectar ao PlayBox Scheduler no momento (o serviço pode estar reiniciando ou sincronizando). Por favor, tente novamente em instantes.'
+    );
+  }
+  throw lastError;
 }
 
 export interface PlayBoxHealth {
@@ -252,18 +284,41 @@ export const playboxService = {
       ...(config.playboxApiKey ? { 'X-API-KEY': config.playboxApiKey } : {}),
     };
 
-    try {
-      const res = await fetch(url, { headers });
-      if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(`Erro na API PlayBox ao gerar PDF (${res.status}): ${errText}`);
+    let lastError: any = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const res = await fetch(url, { headers });
+        if (!res.ok) {
+          const errText = await res.text();
+          throw new Error(`Erro na API PlayBox ao gerar PDF (${res.status}): ${errText}`);
+        }
+        const arrayBuffer = await res.arrayBuffer();
+        return Buffer.from(arrayBuffer);
+      } catch (error: any) {
+        lastError = error;
+        const isConnectionRefused =
+          error?.message?.includes('fetch failed') ||
+          error?.cause?.code === 'ECONNREFUSED' ||
+          error?.message?.includes('ECONNREFUSED');
+        if (isConnectionRefused && attempt < 3) {
+          await delay(attempt * 1000);
+          continue;
+        }
+        break;
       }
-      const arrayBuffer = await res.arrayBuffer();
-      return Buffer.from(arrayBuffer);
-    } catch (error: any) {
-      logger.error({ err: error, endpoint }, 'Falha ao buscar PDF do PlayBox');
-      throw error;
     }
+
+    logger.error({ err: lastError, endpoint }, 'Falha ao buscar PDF do PlayBox');
+    if (
+      lastError?.message?.includes('fetch failed') ||
+      lastError?.cause?.code === 'ECONNREFUSED' ||
+      lastError?.message?.includes('ECONNREFUSED')
+    ) {
+      throw new Error(
+        'Não foi possível conectar ao PlayBox para gerar o PDF (o backend pode estar reiniciando). Tente novamente em instantes.'
+      );
+    }
+    throw lastError;
   },
 
   // Estoque de Pelúcias
